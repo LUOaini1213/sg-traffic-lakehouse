@@ -2,8 +2,16 @@
 
 Each task calls the same CLI that CI and `make pipeline` use (python -m lakehouse <command>), in a separate
 virtualenv inside the Airflow image so dbt's dependencies stay apart from Airflow's. Speed-band bronze is also fed by
-the Kafka consumer; the ingest_speedbands task backfills any snapshot the stream missed, and because bronze writes
-are idempotent it never duplicates what the consumer already wrote.
+the Kafka consumer; the ingest_speedbands task backfills any snapshot the stream missed. Both write with a Delta
+MERGE that only inserts new keys, so the backfill never duplicates or overwrites what the consumer wrote, even when
+both run at the same time.
+
+Snapshot cutoff: the run's data_interval_end (for a manual run without a schedule, its logical date), converted to
+Singapore time by the CLI. A run therefore always sees the same set of snapshot files, however late it starts, and
+a re-run of the same interval sees the same input. There is no free-text parameter.
+
+Retries: ingest, dbt and publish retry once (they are idempotent). The strict quality gate does not retry: its
+result depends only on the data, so a retry would just repeat the failure and delay the alert.
 
 Schedule: manual by default (a local demo). Set SGTL_SCHEDULE, e.g. "0 6 * * *", to run it daily.
 """
@@ -13,11 +21,11 @@ import os
 from datetime import datetime, timedelta
 
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.sdk import DAG, Param
+from airflow.sdk import DAG
 
 PY = os.environ.get("PIPELINE_PYTHON", "python")
 CLI = f"cd /opt/project && {PY} -m lakehouse"
-UNTIL = "{{ ('--until ' ~ params.until) if params.until else '' }}"
+CUTOFF = "--cutoff-utc {{ (data_interval_end or dag_run.run_after).isoformat() }}"
 
 with DAG(
     dag_id="sg_traffic_lakehouse",
@@ -27,15 +35,13 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=1)},
-    params={"until": Param("", type="string",
-                           description="Use speed-band snapshots up to YYYYmmddHHMM (empty: all complete files)")},
-    tags=["lakehouse", "dbt", "datamall"],
+    tags=["lakehouse", "dbt", "datamall", "delta"],
 ) as dag:
     ingest_batch = BashOperator(task_id="ingest_batch", bash_command=f"{CLI} ingest-batch")
-    ingest_speedbands = BashOperator(task_id="ingest_speedbands", bash_command=f"{CLI} ingest-speedbands {UNTIL}")
+    ingest_speedbands = BashOperator(task_id="ingest_speedbands", bash_command=f"{CLI} ingest-speedbands {CUTOFF}")
     profile = BashOperator(task_id="profile_bronze", bash_command=f"{CLI} profile")
     dbt_build = BashOperator(task_id="dbt_build", bash_command=f"{CLI} dbt build")
-    quality = BashOperator(task_id="quality_checks", bash_command=f"{CLI} quality --strict")
+    quality = BashOperator(task_id="quality_checks", bash_command=f"{CLI} quality --strict {CUTOFF}", retries=0)
     publish = BashOperator(task_id="publish_metrics", bash_command=f"{CLI} publish && {CLI} report")
 
     # Sequential rather than parallel ingest: run side by side, the OD load (DuckDB) and the snapshot backfill

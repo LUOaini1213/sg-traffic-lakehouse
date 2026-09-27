@@ -3,11 +3,12 @@ import datetime as dt
 import random
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from lakehouse import messages as m
 from lakehouse.consumer import SnapshotAssembler
 from lakehouse.producer import plan_messages, replay_order
-from lakehouse.speedbands import BronzeSpeedbandWriter, discover_snapshots, partition_path, read_snapshot
+from lakehouse.speedbands import TABLE, BronzeSpeedbandWriter, dedupe, discover_snapshots, read_snapshot
 from lakehouse.storage import Lake
 
 from conftest import FIXTURE
@@ -32,13 +33,13 @@ def table(ts, links, band=3):
                      "max_speed": pa.array([29] * len(links), pa.int16())})
 
 
-def feed(asm, msgs, create_ms=0):
+def feed(asm, msgs):
     for p, key, value in msgs:
         d = m.decode(key, value)
         if d["kind"] == "eos":
             asm.add_eos(d["ts"], p, d["expected"])
         else:
-            asm.add_record(d["ts"], d["link"], d["band"], d["min"], d["max"], create_ms, p)
+            asm.add_record(d["ts"], d["link"], d["band"], d["min"], d["max"], p)
 
 
 def test_codec_roundtrip_with_nulls():
@@ -153,7 +154,7 @@ def test_assembler_times_out_without_markers():
 
 def test_stream_to_bronze_matches_files_with_duplicates_and_late_data(settings):
     """Every fixture snapshot, 30% duplicated records, 2 late snapshots, partitions interleaved at random and
-    delivered twice: bronze must equal the source files exactly, one object per snapshot and partition."""
+    delivered twice: bronze must equal the source files exactly, one slice per snapshot and partition."""
     snaps, _ = discover_snapshots(FIXTURE / "speedbands", min_age_s=0)
     lake = Lake(settings)
     writer = BronzeSpeedbandWriter(lake)
@@ -169,27 +170,35 @@ def test_stream_to_bronze_matches_files_with_duplicates_and_late_data(settings):
             feed(asm, [queues[p].pop(0)])
             for key, reason in asm.ready():
                 t, info = asm.pop(key, reason)
-                writer.upsert(info.ts, t, "stream", info.partition, P)
-    files = lake.list_files("bronze/speedbands")
-    assert files == sorted(partition_path(ts, p) for ts, _ in snaps for p in range(P))
+                writer.upsert(info.ts, t, "stream", info.partition, P, late=info.late)
+    got = lake.delta(TABLE).to_pyarrow_table()
+    slices = {(r["snapshot_ts"], r["part"]) for r in got.select(["snapshot_ts", "part"]).to_pylist()}
+    assert slices == {(ts, p) for ts, _ in snaps for p in range(P)}
+    cols = ["link_id", "speed_band", "min_speed", "max_speed"]
     for ts, path in snaps:
-        got = pa.concat_tables(lake.read_parquet(partition_path(ts, p)) for p in range(P)).sort_by("link_id")
-        cols = ["link_id", "speed_band", "min_speed", "max_speed"]
-        want = read_snapshot(path, ts).sort_by("link_id").select(cols)
-        assert got.select(cols).equals(want), ts
+        mine = got.filter(pc.equal(got["snapshot_ts"], pa.scalar(ts, pa.timestamp("us"))))
+        want = dedupe(read_snapshot(path, ts)).sort_by("link_id").select(cols)
+        assert mine.sort_by("link_id").select(cols).equals(want), ts
+    late = {r["snapshot_ts"] for r in got.select(["snapshot_ts", "_late"]).to_pylist() if r["_late"]}
+    assert late == {T0 + dt.timedelta(minutes=40), T0 + dt.timedelta(hours=3, minutes=20)}
 
 
-def test_file_backfill_and_stream_write_the_same_objects(settings):
-    """Backfill from files after the stream: nothing new, no object rewritten."""
+def test_file_backfill_after_stream_adds_nothing(settings):
+    """Backfill from files after the stream wrote everything: nothing new, no commit."""
     from lakehouse.speedbands import load_files
     lake = Lake(settings)
-    first = load_files(settings, lake, log=lambda *_: None)
-    hashes = {f: lake.sha256(f) for f in lake.list_files("bronze/speedbands")}
-    again = load_files(settings, lake, log=lambda *_: None)
-    assert sum(x["rows_new_in_bronze"] for x in first["snapshots"]) == 120
-    assert sum(x["rows_new_in_bronze"] for x in again["snapshots"]) == 0
-    assert {f: lake.sha256(f) for f in lake.list_files("bronze/speedbands")} == hashes
-    assert len(hashes) == 30
+    writer = BronzeSpeedbandWriter(lake)
+    snaps, _ = discover_snapshots(FIXTURE / "speedbands", min_age_s=0)
+    asm = SnapshotAssembler(clock=Clock())
+    for ts, path in snaps:
+        feed(asm, plan_messages(ts, read_snapshot(path, ts), P))
+        for key, reason in asm.ready():
+            t, info = asm.pop(key, reason)
+            writer.upsert(info.ts, t, "stream", info.partition, P)
+    before = lake.delta_stats(TABLE)
+    res = load_files(settings, lake, log=lambda *_: None)
+    assert sum(x["rows_new_in_bronze"] for x in res["snapshots"]) == 0
+    assert lake.delta_stats(TABLE) == before == {"version": before["version"], "files": 30, "rows": 120}
 
 
 def test_live_pages_to_table_matches_file_schema():
@@ -200,3 +209,10 @@ def test_live_pages_to_table_matches_file_schema():
     assert t.schema == ref.schema
     assert t.to_pylist()[1] == {"snapshot_ts": T0, "link_id": 103000001, "speed_band": 0, "min_speed": None,
                                 "max_speed": None}
+
+
+def test_live_event_time_is_singapore_time_whatever_the_machine_zone():
+    from lakehouse.live import fetch_start
+    utc = dt.datetime(2026, 9, 27, 23, 58, 41, tzinfo=dt.timezone.utc)
+    assert fetch_start(utc) == dt.datetime(2026, 9, 28, 7, 58)
+    assert fetch_start(utc.astimezone(dt.timezone(dt.timedelta(hours=-5)))) == dt.datetime(2026, 9, 28, 7, 58)

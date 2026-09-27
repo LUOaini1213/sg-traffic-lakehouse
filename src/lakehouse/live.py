@@ -11,10 +11,12 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo
 
 import pyarrow as pa
 
 URL = "https://datamall2.mytransport.sg/ltaodataservice/v4/TrafficSpeedBands"
+SGT = ZoneInfo("Asia/Singapore")
 
 
 def fetch_pages(key: str, page_size: int = 500, timeout: float = 60.0) -> list[dict]:
@@ -37,12 +39,19 @@ def _int(v):
 
 def pages_to_table(rows: list[dict], ts: dt.datetime) -> pa.Table:
     return pa.table({
-        "snapshot_ts": pa.array([ts] * len(rows), pa.timestamp("s")),
+        "snapshot_ts": pa.array([ts] * len(rows), pa.timestamp("us")),
         "link_id": pa.array([int(r["LinkID"]) for r in rows], pa.int64()),
         "speed_band": pa.array([_int(r.get("SpeedBand")) for r in rows], pa.int16()),
         "min_speed": pa.array([_int(r.get("MinimumSpeed")) for r in rows], pa.int16()),
         "max_speed": pa.array([_int(r.get("MaximumSpeed")) for r in rows], pa.int16()),
     })
+
+
+def fetch_start(now: dt.datetime | None = None) -> dt.datetime:
+    """Event time of a live snapshot: the fetch start in Singapore time, naive and truncated to the minute, like the
+    recorded file names. Explicit about the zone, so the machine's own time zone does not matter."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return now.astimezone(SGT).replace(tzinfo=None, second=0, microsecond=0)
 
 
 def run(settings, every_s: float, count: int) -> None:
@@ -56,7 +65,7 @@ def run(settings, every_s: float, count: int) -> None:
     prod = Producer({"bootstrap.servers": settings.kafka_bootstrap, "enable.idempotence": True, "acks": "all",
                      "linger.ms": 20, "compression.type": "lz4"})
     for i in range(count):
-        ts = dt.datetime.now().replace(second=0, microsecond=0)  # event time = fetch start, as in the recorded files
+        ts = fetch_start()
         table = pages_to_table(fetch_pages(key), ts)
         for p, k, v in plan_messages(ts, table, settings.partitions):
             while True:

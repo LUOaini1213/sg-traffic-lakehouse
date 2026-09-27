@@ -27,6 +27,21 @@ def _ts(s: str | None) -> dt.datetime | None:
     return dt.datetime.strptime(s, "%Y%m%d%H%M") if s else None
 
 
+def _cutoff(a) -> dt.datetime | None:
+    """Snapshot cutoff as naive SGT: --until YYYYmmddHHMM (SGT), or --cutoff-utc <ISO timestamp with zone> (what the
+    Airflow DAG passes: the run's data_interval_end)."""
+    iso = getattr(a, "cutoff_utc", None)
+    if iso:
+        from zoneinfo import ZoneInfo
+        t = dt.datetime.fromisoformat(iso)
+        if t.tzinfo is None:
+            raise SystemExit("--cutoff-utc needs a time zone, e.g. 2026-09-27T11:23:00+00:00")
+        cut = t.astimezone(ZoneInfo("Asia/Singapore")).replace(tzinfo=None)
+        print(f"snapshot cutoff: {cut:%Y%m%d%H%M} SGT (from {iso})", flush=True)
+        return cut
+    return _ts(getattr(a, "until", None))
+
+
 def _write(settings, name: str, obj) -> None:
     out = Path(settings.results_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -66,7 +81,7 @@ def cmd_ingest_batch(settings, a):
 def cmd_ingest_speedbands(settings, a):
     from .speedbands import load_files
     from .storage import Lake
-    res = load_files(settings, Lake(settings), until=_ts(a.until), since=_ts(a.since))
+    res = load_files(settings, Lake(settings), until=_cutoff(a), since=_ts(a.since))
     _write(settings, "speedband_files.json", res)
 
 
@@ -85,7 +100,7 @@ def cmd_dbt(settings, a):
 
 def cmd_quality(settings, a):
     from . import quality
-    results, fail = quality.run(settings, strict=a.strict)
+    results, fail = quality.run(settings, strict=a.strict, until=_cutoff(a))
     for r in results:
         print(f"{r['status']:5} {r['check']}: {r['value']} (threshold {r['threshold']})")
     if fail:
@@ -123,14 +138,15 @@ def cmd_consume(settings, a):
     res = consumer.run(settings, Lake(settings), group_id=a.group, idle_exit_s=a.idle_exit,
                        flush_timeout_s=a.flush_timeout, allowed_lateness_min=a.allowed_lateness,
                        max_seconds=a.max_seconds, ready_file=a.ready_file,
-                       latency_file=a.latency_file)
-    print(json.dumps({k: v for k, v in res.items() if k != "flushes"}, indent=2))
+                       latency_file=a.latency_file, crash_after_writes=a.crash_after_writes)
+    print(json.dumps({k: v for k, v in res.items() if k != "flush_log"}, indent=2))
     if a.out:
         _write(settings, a.out, res)
 
 
-def run_pipeline(settings, until: str | None = None, strict: bool = False) -> dict:
-    """Batch pipeline without Airflow. Returns step timings."""
+def run_pipeline(settings, until: str | None = None, strict: bool = False, after_step=None) -> dict:
+    """Batch pipeline without Airflow. Returns step timings. after_step(name) runs after each step (tests use it
+    to plant a defect between two steps)."""
     ns = argparse.Namespace(until=until, since=None, dbt_args=["build"], strict=strict)
     timings = {}
     for name, fn in [("ingest-batch", cmd_ingest_batch), ("ingest-speedbands", cmd_ingest_speedbands),
@@ -140,6 +156,8 @@ def run_pipeline(settings, until: str | None = None, strict: bool = False) -> di
         print(f"== {name}", flush=True)
         fn(settings, ns)
         timings[name] = round(time.perf_counter() - t0, 2)
+        if after_step:
+            after_step(name)
     _write(settings, "pipeline_timings.json", timings)
     return timings
 
@@ -179,11 +197,14 @@ def main(argv=None):
     sub.add_parser("ingest-batch", help="monthly PV/OD CSVs, bus network JSON and link metadata -> bronze")
     s = sub.add_parser("ingest-speedbands", help="backfill bronze speed bands from snapshot files (no Kafka)")
     s.add_argument("--until"), s.add_argument("--since")
+    s.add_argument("--cutoff-utc", help="cutoff as an ISO timestamp with zone (Airflow's data_interval_end)")
     sub.add_parser("profile", help="profile bronze and reconcile it with the source files")
     s = sub.add_parser("dbt", help="run dbt with the lake settings, e.g. `dbt build` or `dbt docs generate`")
     s.add_argument("dbt_args", nargs=argparse.REMAINDER)
     s = sub.add_parser("quality", help="custom data-quality checks")
     s.add_argument("--strict", action="store_true", help="exit non-zero if an error-severity check fails")
+    s.add_argument("--until", help="the snapshot cutoff the pipeline used (reported by sampler_log_consistency)")
+    s.add_argument("--cutoff-utc", help="cutoff as an ISO timestamp with zone (Airflow's data_interval_end)")
     sub.add_parser("publish", help="export gold to the lake and record row counts and hashes")
     sub.add_parser("report", help="write the static HTML report")
     s = sub.add_parser("pipeline", help="the whole batch pipeline without Airflow")
@@ -202,7 +223,9 @@ def main(argv=None):
     s.add_argument("--allowed-lateness", type=float, default=30.0, help="minutes of event time")
     s.add_argument("--max-seconds", type=float, default=3600.0)
     s.add_argument("--ready-file", help="written once partitions are assigned")
-    s.add_argument("--latency-file", help="save per-record latencies (.npy) for the benchmark")
+    s.add_argument("--latency-file", help="save end-of-snapshot-to-write latencies (.npy) for the benchmark")
+    s.add_argument("--crash-after-writes", type=int, default=0,
+                   help="exit abruptly after this many bronze writes, before committing offsets (crash test)")
     s.add_argument("--out")
     s = sub.add_parser("stream-bench", help="throughput, latency and re-run measurements on the Docker stack")
     s.add_argument("--until"), s.add_argument("--keep-bronze", action="store_true")

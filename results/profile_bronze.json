@@ -1,0 +1,562 @@
+{
+  "datasets": [
+    {
+      "dataset": "speedbands",
+      "files": 75,
+      "rows": 3594675,
+      "key": [
+        "snapshot_ts",
+        "link_id"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "snapshot_ts": {
+          "nulls": 0,
+          "min": "2026-09-26 19:28:00",
+          "max": "2026-09-27 19:23:00",
+          "approx_distinct": 24
+        },
+        "link_id": {
+          "nulls": 0,
+          "min": "2",
+          "max": "219879",
+          "approx_distinct": 142013
+        },
+        "speed_band": {
+          "nulls": 0,
+          "min": "0",
+          "max": "8",
+          "approx_distinct": 10
+        },
+        "min_speed": {
+          "nulls": 1125,
+          "min": "0",
+          "max": "70",
+          "approx_distinct": 9
+        },
+        "max_speed": {
+          "nulls": 1125,
+          "min": "9",
+          "max": "999",
+          "approx_distinct": 9
+        },
+        "_source": {
+          "nulls": 0,
+          "min": "stream",
+          "max": "stream",
+          "approx_distinct": 1
+        },
+        "_ingested_at": {
+          "nulls": 0,
+          "min": "2026-09-27 19:41:21.503",
+          "max": "2026-09-27 19:42:24.575",
+          "approx_distinct": 71
+        },
+        "obs_date": {
+          "nulls": 0,
+          "min": "2026-09-26",
+          "max": "2026-09-27",
+          "approx_distinct": 2
+        },
+        "obs_hour": {
+          "nulls": 0,
+          "min": "15",
+          "max": "23",
+          "approx_distinct": 7
+        }
+      }
+    },
+    {
+      "dataset": "speedband_links",
+      "files": 1,
+      "rows": 143787,
+      "key": [
+        "LinkID"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "LinkID": {
+          "nulls": 0,
+          "min": "2",
+          "max": "219879",
+          "approx_distinct": 142013
+        },
+        "RoadName": {
+          "nulls": 0,
+          "min": "ABINGDON ROAD",
+          "max": "ZUBIR SAID DRIVE",
+          "approx_distinct": 3458
+        },
+        "RoadCategory": {
+          "nulls": 0,
+          "min": "1",
+          "max": "8",
+          "approx_distinct": 7
+        },
+        "StartLat": {
+          "nulls": 0,
+          "min": "1.230494",
+          "max": "1.469869",
+          "approx_distinct": 68550
+        },
+        "StartLon": {
+          "nulls": 0,
+          "min": "103.614261",
+          "max": "104.031366",
+          "approx_distinct": 88742
+        },
+        "EndLat": {
+          "nulls": 0,
+          "min": "1.230494",
+          "max": "1.469869",
+          "approx_distinct": 69137
+        },
+        "EndLon": {
+          "nulls": 0,
+          "min": "103.614261",
+          "max": "104.031366",
+          "approx_distinct": 88742
+        }
+      }
+    },
+    {
+      "dataset": "pv_stop",
+      "files": 4,
+      "rows": 812430,
+      "key": [
+        "YEAR_MONTH",
+        "DAY_TYPE",
+        "TIME_PER_HOUR",
+        "PT_CODE"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "YEAR_MONTH": {
+          "nulls": 0,
+          "min": "2026-02",
+          "max": "2026-08",
+          "approx_distinct": 4
+        },
+        "DAY_TYPE": {
+          "nulls": 0,
+          "min": "WEEKDAY",
+          "max": "WEEKENDS/HOLIDAY",
+          "approx_distinct": 2
+        },
+        "TIME_PER_HOUR": {
+          "nulls": 0,
+          "min": "0",
+          "max": "23",
+          "approx_distinct": 24
+        },
+        "PT_TYPE": {
+          "nulls": 0,
+          "min": "BUS",
+          "max": "BUS",
+          "approx_distinct": 1
+        },
+        "PT_CODE": {
+          "nulls": 0,
+          "min": "01012",
+          "max": "99189",
+          "approx_distinct": 5201
+        },
+        "TOTAL_TAP_IN_VOLUME": {
+          "nulls": 0,
+          "min": "0",
+          "max": "164333",
+          "approx_distinct": 10265
+        },
+        "TOTAL_TAP_OUT_VOLUME": {
+          "nulls": 0,
+          "min": "0",
+          "max": "137341",
+          "approx_distinct": 11935
+        },
+        "month": {
+          "nulls": 0,
+          "min": "2026-02",
+          "max": "2026-08",
+          "approx_distinct": 4
+        }
+      }
+    },
+    {
+      "dataset": "pv_od",
+      "files": 2,
+      "rows": 12053007,
+      "key": [
+        "YEAR_MONTH",
+        "DAY_TYPE",
+        "TIME_PER_HOUR",
+        "ORIGIN_PT_CODE",
+        "DESTINATION_PT_CODE"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "YEAR_MONTH": {
+          "nulls": 0,
+          "min": "2026-07",
+          "max": "2026-08",
+          "approx_distinct": 2
+        },
+        "DAY_TYPE": {
+          "nulls": 0,
+          "min": "WEEKDAY",
+          "max": "WEEKENDS/HOLIDAY",
+          "approx_distinct": 2
+        },
+        "TIME_PER_HOUR": {
+          "nulls": 0,
+          "min": "0",
+          "max": "23",
+          "approx_distinct": 24
+        },
+        "PT_TYPE": {
+          "nulls": 0,
+          "min": "BUS",
+          "max": "BUS",
+          "approx_distinct": 1
+        },
+        "ORIGIN_PT_CODE": {
+          "nulls": 0,
+          "min": "01012",
+          "max": "99189",
+          "approx_distinct": 5201
+        },
+        "DESTINATION_PT_CODE": {
+          "nulls": 0,
+          "min": "01012",
+          "max": "99189",
+          "approx_distinct": 5201
+        },
+        "TOTAL_TRIPS": {
+          "nulls": 0,
+          "min": "1",
+          "max": "39169",
+          "approx_distinct": 4502
+        },
+        "month": {
+          "nulls": 0,
+          "min": "2026-07",
+          "max": "2026-08",
+          "approx_distinct": 2
+        }
+      }
+    },
+    {
+      "dataset": "bus_stops",
+      "files": 1,
+      "rows": 5209,
+      "key": [
+        "as_of",
+        "BusStopCode"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "BusStopCode": {
+          "nulls": 0,
+          "min": "01012",
+          "max": "99189",
+          "approx_distinct": 5201
+        },
+        "RoadName": {
+          "nulls": 0,
+          "min": "AYE",
+          "max": "Zion Rd",
+          "approx_distinct": 925
+        },
+        "Description": {
+          "nulls": 0,
+          "min": "15 Scotts",
+          "max": "one-north Stn/Galaxis",
+          "approx_distinct": 4623
+        },
+        "Latitude": {
+          "nulls": 0,
+          "min": "1.25142694",
+          "max": "1.49390379286364",
+          "approx_distinct": 4723
+        },
+        "Longitude": {
+          "nulls": 0,
+          "min": "103.617479",
+          "max": "104.030008",
+          "approx_distinct": 5694
+        },
+        "as_of": {
+          "nulls": 0,
+          "min": "20260926",
+          "max": "20260926",
+          "approx_distinct": 1
+        }
+      }
+    },
+    {
+      "dataset": "bus_services",
+      "files": 1,
+      "rows": 802,
+      "key": [
+        "as_of",
+        "ServiceNo",
+        "Direction"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "ServiceNo": {
+          "nulls": 0,
+          "min": "10",
+          "max": "SWB",
+          "approx_distinct": 586
+        },
+        "Operator": {
+          "nulls": 0,
+          "min": "GAS",
+          "max": "TTS",
+          "approx_distinct": 4
+        },
+        "Direction": {
+          "nulls": 0,
+          "min": "1",
+          "max": "2",
+          "approx_distinct": 2
+        },
+        "Category": {
+          "nulls": 0,
+          "min": "CITY_LINK",
+          "max": "TRUNK",
+          "approx_distinct": 4
+        },
+        "OriginCode": {
+          "nulls": 0,
+          "min": "",
+          "max": "99009",
+          "approx_distinct": 165
+        },
+        "DestinationCode": {
+          "nulls": 0,
+          "min": "",
+          "max": "99009",
+          "approx_distinct": 215
+        },
+        "AM_Peak_Freq": {
+          "nulls": 0,
+          "min": "-",
+          "max": "9-9",
+          "approx_distinct": 192
+        },
+        "AM_Offpeak_Freq": {
+          "nulls": 0,
+          "min": "-",
+          "max": "9-9",
+          "approx_distinct": 206
+        },
+        "PM_Peak_Freq": {
+          "nulls": 0,
+          "min": "-",
+          "max": "9-19",
+          "approx_distinct": 194
+        },
+        "PM_Offpeak_Freq": {
+          "nulls": 0,
+          "min": "-",
+          "max": "9-9",
+          "approx_distinct": 207
+        },
+        "LoopDesc": {
+          "nulls": 0,
+          "min": "",
+          "max": "Yishun Ring Rd",
+          "approx_distinct": 162
+        },
+        "as_of": {
+          "nulls": 0,
+          "min": "20260926",
+          "max": "20260926",
+          "approx_distinct": 1
+        }
+      }
+    },
+    {
+      "dataset": "bus_routes",
+      "files": 1,
+      "rows": 26842,
+      "key": [
+        "as_of",
+        "ServiceNo",
+        "Direction",
+        "StopSequence"
+      ],
+      "duplicate_keys": 0,
+      "columns": {
+        "ServiceNo": {
+          "nulls": 0,
+          "min": "10",
+          "max": "SWB",
+          "approx_distinct": 586
+        },
+        "Operator": {
+          "nulls": 0,
+          "min": "GAS",
+          "max": "TTS",
+          "approx_distinct": 4
+        },
+        "Direction": {
+          "nulls": 0,
+          "min": "1",
+          "max": "2",
+          "approx_distinct": 2
+        },
+        "StopSequence": {
+          "nulls": 0,
+          "min": "1",
+          "max": "105",
+          "approx_distinct": 105
+        },
+        "BusStopCode": {
+          "nulls": 0,
+          "min": "01012",
+          "max": "99189",
+          "approx_distinct": 5201
+        },
+        "Distance": {
+          "nulls": 0,
+          "min": "0.0",
+          "max": "73.4",
+          "approx_distinct": 549
+        },
+        "WD_FirstBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 1320
+        },
+        "WD_LastBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 1311
+        },
+        "SAT_FirstBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 1163
+        },
+        "SAT_LastBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 1115
+        },
+        "SUN_FirstBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 922
+        },
+        "SUN_LastBus": {
+          "nulls": 0,
+          "min": "-",
+          "max": "2400",
+          "approx_distinct": 705
+        },
+        "as_of": {
+          "nulls": 0,
+          "min": "20260926",
+          "max": "20260926",
+          "approx_distinct": 1
+        }
+      }
+    }
+  ],
+  "reconciliation": [
+    {
+      "dataset": "pv_stop",
+      "file": "transport_node_bus_202602.csv",
+      "source_valid_rows": 203121,
+      "bronze_rows": 203121,
+      "source_sums": {
+        "TOTAL_TAP_IN_VOLUME": 106637940,
+        "TOTAL_TAP_OUT_VOLUME": 106637943
+      },
+      "bronze_sums": {
+        "TOTAL_TAP_IN_VOLUME": 106637940,
+        "TOTAL_TAP_OUT_VOLUME": 106637943
+      },
+      "match": true
+    },
+    {
+      "dataset": "pv_stop",
+      "file": "transport_node_bus_202606.csv",
+      "source_valid_rows": 202732,
+      "bronze_rows": 202732,
+      "source_sums": {
+        "TOTAL_TAP_IN_VOLUME": 107711761,
+        "TOTAL_TAP_OUT_VOLUME": 107712415
+      },
+      "bronze_sums": {
+        "TOTAL_TAP_IN_VOLUME": 107711761,
+        "TOTAL_TAP_OUT_VOLUME": 107712415
+      },
+      "match": true
+    },
+    {
+      "dataset": "pv_stop",
+      "file": "transport_node_bus_202607.csv",
+      "source_valid_rows": 203099,
+      "bronze_rows": 203099,
+      "source_sums": {
+        "TOTAL_TAP_IN_VOLUME": 123978461,
+        "TOTAL_TAP_OUT_VOLUME": 123982251
+      },
+      "bronze_sums": {
+        "TOTAL_TAP_IN_VOLUME": 123978461,
+        "TOTAL_TAP_OUT_VOLUME": 123982251
+      },
+      "match": true
+    },
+    {
+      "dataset": "pv_stop",
+      "file": "transport_node_bus_202608.csv",
+      "source_valid_rows": 203478,
+      "bronze_rows": 203478,
+      "source_sums": {
+        "TOTAL_TAP_IN_VOLUME": 122914085,
+        "TOTAL_TAP_OUT_VOLUME": 122914709
+      },
+      "bronze_sums": {
+        "TOTAL_TAP_IN_VOLUME": 122914085,
+        "TOTAL_TAP_OUT_VOLUME": 122914709
+      },
+      "match": true
+    },
+    {
+      "dataset": "pv_od",
+      "file": "origin_destination_bus_202607.csv",
+      "source_valid_rows": 5932843,
+      "bronze_rows": 5932843,
+      "source_sums": {
+        "TOTAL_TRIPS": 123960291
+      },
+      "bronze_sums": {
+        "TOTAL_TRIPS": 123960291
+      },
+      "match": true
+    },
+    {
+      "dataset": "pv_od",
+      "file": "origin_destination_bus_202608.csv",
+      "source_valid_rows": 6120164,
+      "bronze_rows": 6120164,
+      "source_sums": {
+        "TOTAL_TRIPS": 122895479
+      },
+      "bronze_sums": {
+        "TOTAL_TRIPS": 122895479
+      },
+      "match": true
+    }
+  ],
+  "all_reconciled": true
+}

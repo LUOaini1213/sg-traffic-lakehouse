@@ -1,0 +1,19 @@
+# local settings (MinIO dev password) - see .env.example
+.env
+# local lake / warehouse when LAKE_ROOT is a directory
+.lake/
+# raw DataMall data is never committed; only the synthetic fixture under tests/fixtures is
+data/
+*.duckdb
+*.duckdb.wal
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+# per-run Airflow outputs are kept only as the summary written by scripts/airflow_run.sh
+results/airflow/*
+!results/airflow/dag_run.json

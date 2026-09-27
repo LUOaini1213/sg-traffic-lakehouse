@@ -1,0 +1,192 @@
+{
+  "checks": [
+    {
+      "check": "snapshot_completeness",
+      "severity": "error",
+      "status": "PASS",
+      "value": 1.0,
+      "threshold": 0.99,
+      "details": {
+        "snapshots": 25,
+        "incomplete": []
+      },
+      "why": "Share of metadata links present in a snapshot. A partial snapshot biases every per-link average and breaks congestion episodes (a missing link ends a run)."
+    },
+    {
+      "check": "stale_snapshot",
+      "severity": "warn",
+      "status": "PASS",
+      "value": 0.1869,
+      "threshold": 0.005,
+      "details": {
+        "pairs_compared": 24,
+        "stale": [],
+        "changed_share_range": [
+          0.1869,
+          0.4823
+        ]
+      },
+      "why": "Share of links whose band changed since the previous snapshot. LTA refreshes speed bands every 5 minutes, so a snapshot taken 15-20 minutes later in which almost nothing changed is probably a cached or repeated response."
+    },
+    {
+      "check": "cadence_gap",
+      "severity": "warn",
+      "status": "WARN",
+      "value": 2,
+      "threshold": {
+        "min_minutes": 10,
+        "max_minutes": 30
+      },
+      "details": {
+        "intervals": 24,
+        "long_gaps": [
+          {
+            "from": "2026-09-26T23:01:00",
+            "to": "2026-09-27T15:50:00",
+            "minutes": 1009.0
+          }
+        ],
+        "short_gaps": [
+          {
+            "from": "2026-09-26T19:28:00",
+            "to": "2026-09-26T19:33:00",
+            "minutes": 5.0
+          }
+        ],
+        "regular_intervals": 22,
+        "regular_minutes_min_median_max": [
+          17.0,
+          19.0,
+          21.0
+        ]
+      },
+      "why": "The sampler waits 15 minutes after each fetch, so snapshots should be about 15-22 minutes apart. Longer gaps mean the sampler was stopped; much shorter ones mean an extra fetch outside the loop."
+    },
+    {
+      "check": "unknown_link_ids",
+      "severity": "error",
+      "status": "PASS",
+      "value": 0,
+      "threshold": 0,
+      "details": {
+        "link_ids": [],
+        "rows": 0
+      },
+      "why": "Links in the snapshots that are not in the link metadata cannot be placed on a road or given a road category."
+    },
+    {
+      "check": "unobserved_metadata_links",
+      "severity": "info",
+      "status": "PASS",
+      "value": 0,
+      "threshold": null,
+      "details": {
+        "metadata_links": 143787
+      },
+      "why": "Links in the metadata never seen in any snapshot (reported for information)."
+    },
+    {
+      "check": "unknown_band_share",
+      "severity": "warn",
+      "status": "PASS",
+      "value": 0.000313,
+      "threshold": 0.001,
+      "details": {
+        "rows": 1125,
+        "links": 45,
+        "of_rows": 3594675
+      },
+      "why": "The DataMall documentation defines bands 1-8. Other values are kept in bronze and set to NULL in silver."
+    },
+    {
+      "check": "sampler_log_consistency",
+      "severity": "warn",
+      "status": "WARN",
+      "value": 35,
+      "threshold": 36,
+      "details": {
+        "log_fetch_lines": 35,
+        "snapshot_files": 36,
+        "row_counts_in_log": [
+          143787
+        ],
+        "other_lines": [],
+        "log_has_timestamps": false
+      },
+      "why": "sampler.log gets one line per fetch made by the sampler loop. A different count from the number of snapshot files means some files were fetched outside the loop or some fetches failed."
+    },
+    {
+      "check": "od_vs_tapin",
+      "severity": "error",
+      "status": "PASS",
+      "value": 0.000186,
+      "threshold": 0.001,
+      "details": {
+        "by_month_day_type": [
+          {
+            "year_month": "2026-07",
+            "day_type": "WEEKDAY",
+            "tap_in": 96826722,
+            "od_trips": 96813602,
+            "relative_diff": 0.000135
+          },
+          {
+            "year_month": "2026-07",
+            "day_type": "WEEKENDS/HOLIDAY",
+            "tap_in": 27151739,
+            "od_trips": 27146689,
+            "relative_diff": 0.000186
+          },
+          {
+            "year_month": "2026-08",
+            "day_type": "WEEKDAY",
+            "tap_in": 85573057,
+            "od_trips": 85560932,
+            "relative_diff": 0.000142
+          },
+          {
+            "year_month": "2026-08",
+            "day_type": "WEEKENDS/HOLIDAY",
+            "tap_in": 37341028,
+            "od_trips": 37334547,
+            "relative_diff": 0.000174
+          }
+        ]
+      },
+      "why": "Every OD trip starts with a tap-in, so monthly OD trips and stop tap-ins should agree closely for each day type. A larger difference points to a truncated file or a load error."
+    },
+    {
+      "check": "pv_stops_missing_from_master",
+      "severity": "warn",
+      "status": "PASS",
+      "value": 0.0002,
+      "threshold": 0.01,
+      "details": {
+        "stops": 6,
+        "tap_ins": 92368
+      },
+      "why": "Stops in the passenger volumes that are not in the current stop list (closed, renumbered or temporary stops)."
+    },
+    {
+      "check": "quarantine_share",
+      "severity": "warn",
+      "status": "PASS",
+      "value": 1.07e-06,
+      "threshold": 0.0001,
+      "details": {
+        "rows_read": 13042091,
+        "rows_quarantined": 14,
+        "reasons": {
+          "missing_or_uncastable_time_per_hour": 14
+        },
+        "volume_in_quarantined_rows": {
+          "TOTAL_TAP_IN_VOLUME": 0,
+          "TOTAL_TAP_OUT_VOLUME": 22,
+          "TOTAL_TRIPS": 0
+        }
+      },
+      "why": "Share of source rows rejected by the batch ingest rules (see bronze/_quarantine)."
+    }
+  ],
+  "failed": false
+}

@@ -1,0 +1,37 @@
+[
+{
+"BusStopCode": "01012",
+"RoadName": "Fixture Rd",
+"Description": "Fixture Stop 01012",
+"Latitude": 1.3,
+"Longitude": 103.8
+},
+{
+"BusStopCode": "01013",
+"RoadName": "Fixture Rd",
+"Description": "Fixture Stop 01013",
+"Latitude": 1.302,
+"Longitude": 103.80199999999999
+},
+{
+"BusStopCode": "10009",
+"RoadName": "Fixture Rd",
+"Description": "Fixture Stop 10009",
+"Latitude": 1.304,
+"Longitude": 103.804
+},
+{
+"BusStopCode": "10011",
+"RoadName": "Fixture Rd",
+"Description": "Fixture Stop 10011",
+"Latitude": 1.306,
+"Longitude": 103.806
+},
+{
+"BusStopCode": "20009",
+"RoadName": "Fixture Rd",
+"Description": "Fixture Stop 20009",
+"Latitude": 1.308,
+"Longitude": 103.80799999999999
+}
+]

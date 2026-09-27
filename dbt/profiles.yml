@@ -1,0 +1,18 @@
+# No secrets in this file: S3 settings come from the environment (see .env.example). With a local LAKE_ROOT the
+# S3 settings are unused.
+sg_traffic:
+  target: default
+  outputs:
+    default:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH') }}"
+      threads: 4
+      extensions: [httpfs, parquet]
+      settings:
+        memory_limit: "{{ env_var('DUCKDB_MEMORY', '1500MB') }}"
+        s3_endpoint: "{{ env_var('S3_ENDPOINT', '') }}"
+        s3_access_key_id: "{{ env_var('AWS_ACCESS_KEY_ID', '') }}"
+        s3_secret_access_key: "{{ env_var('AWS_SECRET_ACCESS_KEY', '') }}"
+        s3_url_style: path
+        s3_use_ssl: false
+        s3_region: us-east-1

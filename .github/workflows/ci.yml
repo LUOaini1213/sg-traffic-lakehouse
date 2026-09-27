@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fixture is reproducible from its generator
+        run: python tests/make_fixture.py && git diff --exit-code tests/fixtures
+      - name: Unit and end-to-end tests (dbt build + dbt tests on the fixture, reproducibility check)
+        run: python -m pytest -q
+      - name: Batch pipeline on the fixture without Airflow
+        run: make fixture-pipeline
+      - name: README numbers match the committed results files
+        run: PYTHONPATH=src python -m lakehouse summarize --check
+      - name: Mutation check (every planted bug must fail a test)
+        run: python tests/mutate.py
+
+  stack-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Start Redpanda and MinIO
+        run: |
+          cp .env.example .env
+          sed -i "s#^SOURCE_DIR_HOST=.*#SOURCE_DIR_HOST=$PWD/tests/fixtures/raw/datamall#" .env
+          docker compose up -d --wait redpanda
+          docker compose up -d minio
+      - name: Kafka -> MinIO bronze -> dbt on the fixture
+        run: bash scripts/stack_smoke.sh
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

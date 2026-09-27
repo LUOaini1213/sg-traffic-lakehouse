@@ -1,0 +1,246 @@
+version: 2
+
+models:
+  - name: stg_speedband_obs
+    description: Cleaned speed-band observations, one row per snapshot and link.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [snapshot_ts, link_id]
+    columns:
+      - name: snapshot_ts
+        description: Event time of the snapshot (SGT).
+        tests: [not_null]
+      - name: link_id
+        description: LTA road link identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_link')
+                field: link_id
+              config:
+                severity: warn  # counted with a threshold by the Python quality check unknown_link_ids
+      - name: speed_band
+        description: Speed band 1-8; NULL when the feed reported a value outside 1-8 (the feed uses 0 for a few links).
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 8}
+      - name: is_band_unknown
+        description: True when the published band was outside 1-8.
+        tests: [not_null]
+      - name: speed_lower_kmh
+        description: Lower bound of the band, km/h.
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 70}
+      - name: speed_upper_kmh
+        description: Upper bound of the band, km/h; NULL for band 8 (the feed's 999 means open-ended).
+        tests:
+          - in_range:
+              arguments: {min_value: 9, max_value: 69}
+      - name: partition_date
+        description: obs_date from the bronze object path; must equal the date of snapshot_ts (singular test).
+      - name: partition_hour
+        description: obs_hour from the bronze object path; must equal the hour of snapshot_ts (singular test).
+      - name: ingest_source
+        description: "'stream' or 'file'."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['stream', 'file']
+
+  - name: dim_snapshot
+    description: One row per snapshot, with its sequence number, the gap since the previous snapshot and its sampling run.
+    columns:
+      - name: snapshot_ts
+        description: Event time of the snapshot (SGT).
+        tests: [unique, not_null]
+      - name: snapshot_seq
+        description: 1-based position in event-time order.
+        tests: [unique, not_null]
+      - name: sampling_run
+        description: Increments after every gap longer than var max_gap_minutes.
+        tests: [not_null]
+      - name: prev_snapshot_ts
+        description: Previous snapshot's event time.
+      - name: gap_minutes
+        description: Minutes since the previous snapshot.
+        tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: n_rows
+        description: Links reported in the snapshot.
+      - name: n_rows_known_band
+        description: Links reported with a band in 1-8.
+      - name: obs_date
+        description: Date of the snapshot (SGT).
+      - name: obs_hour
+        description: Hour of the snapshot (SGT).
+      - name: day_type
+        description: WEEKDAY or WEEKENDS/HOLIDAY, using the MOM 2026 public holidays (seed public_holidays_sg_2026).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['WEEKDAY', 'WEEKENDS/HOLIDAY']
+
+  - name: dim_link
+    description: Road links of the speed-band feed with road category and straight-line length.
+    columns:
+      - name: link_id
+        description: LTA road link identifier.
+        tests: [unique, not_null]
+      - name: road_name
+        description: Road name as published.
+      - name: road_category
+        description: "LTA road category: 1 expressway, 2 major arterial, 3 arterial, 4 minor arterial, 5 small road, 6 slip road, 8 short tunnel."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 8]
+      - name: road_category_label
+        description: Label from seed road_category_ref.
+      - name: start_lat
+        description: Latitude of the link start (WGS84).
+        tests:
+          - in_range:
+              arguments: {min_value: 1.15, max_value: 1.50}
+      - name: start_lon
+        description: Longitude of the link start (WGS84).
+        tests:
+          - in_range:
+              arguments: {min_value: 103.55, max_value: 104.10}
+      - name: end_lat
+        description: Latitude of the link end (WGS84).
+      - name: end_lon
+        description: Longitude of the link end (WGS84).
+      - name: length_m
+        description: Haversine distance between start and end, metres.
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 20000}
+
+  - name: dim_calendar
+    description: Calendar for var calendar_start..calendar_end with the day type DataMall uses.
+    columns:
+      - name: cal_date
+        description: Date.
+        tests: [unique, not_null]
+      - name: day_type
+        description: WEEKENDS/HOLIDAY for Saturdays, Sundays and MOM public holidays; otherwise WEEKDAY.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['WEEKDAY', 'WEEKENDS/HOLIDAY']
+
+  - name: dim_month_day_counts
+    description: Number of days of each day type in each month.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [year_month, day_type]
+    columns:
+      - name: n_days
+        description: Days of this type in the month.
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 31}
+
+  - name: dim_bus_stop
+    description: Bus stops from the latest BusStops pull.
+    columns:
+      - name: stop_code
+        description: Five-digit bus stop code, kept as text (leading zeros matter, e.g. 01012).
+        tests: [unique, not_null]
+      - name: stop_name
+        description: Stop description as published.
+      - name: lat
+        description: Latitude (WGS84). One stop, Larkin Terminal, is in Johor Bahru.
+        tests:
+          - in_range:
+              arguments: {min_value: 1.15, max_value: 1.55}
+      - name: lon
+        description: Longitude (WGS84).
+        tests:
+          - in_range:
+              arguments: {min_value: 103.55, max_value: 104.10}
+
+  - name: dim_bus_service
+    description: Bus services from the latest BusServices pull.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [service_no, direction]
+    columns:
+      - name: service_no
+        description: Service number.
+        tests: [not_null]
+
+  - name: fct_bus_route_stop
+    description: Stop sequence of every service direction from the latest BusRoutes pull.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [service_no, direction, stop_sequence]
+    columns:
+      - name: stop_code
+        description: Stop served.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_bus_stop')
+                field: stop_code
+
+  - name: stg_stop_pv
+    description: Typed monthly tap-in/tap-out volumes per stop, hour and day type.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [year_month, day_type, hour, stop_code]
+    columns:
+      - name: year_month
+        description: Month, YYYY-MM.
+        tests: [not_null]
+      - name: day_type
+        description: WEEKDAY or WEEKENDS/HOLIDAY.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['WEEKDAY', 'WEEKENDS/HOLIDAY']
+      - name: hour
+        description: Hour of day 0-23.
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 23}
+      - name: stop_code
+        description: Five-digit stop code.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_bus_stop')
+                field: stop_code
+              config:
+                severity: warn  # a few stops in the volumes are not in the current stop list
+      - name: tap_in
+        description: Tap-ins summed over all days of the day type in the month.
+        tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: tap_out
+        description: Tap-outs summed over all days of the day type in the month.
+        tests:
+          - in_range:
+              arguments: {min_value: 0}
+
+  - name: stg_od
+    description: Typed monthly origin-destination trips (view over bronze).
+    columns:
+      - name: trips
+        description: Trips summed over all days of the day type in the month.
+        tests:
+          - in_range:
+              arguments: {min_value: 0}

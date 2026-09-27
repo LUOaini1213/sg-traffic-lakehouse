@@ -1,0 +1,63 @@
+# Thresholds for the custom data-quality checks (src/lakehouse/quality.py).
+# severity: error -> the check fails the pipeline in --strict mode (Airflow runs strict);
+#           warn  -> reported, pipeline continues;  info -> reported only.
+
+snapshot_completeness:
+  severity: error
+  min_ratio: 0.99
+  why: >
+    Share of metadata links present in a snapshot. A partial snapshot biases every per-link average and breaks
+    congestion episodes (a missing link ends a run).
+
+stale_snapshot:
+  severity: warn
+  min_changed_share: 0.005
+  why: >
+    Share of links whose band changed since the previous snapshot. LTA refreshes speed bands every 5 minutes, so a
+    snapshot taken 15-20 minutes later in which almost nothing changed is probably a cached or repeated response.
+
+cadence_gap:
+  severity: warn
+  expected_minutes: 20
+  max_gap_minutes: 30
+  min_gap_minutes: 10
+  why: >
+    The sampler waits 15 minutes after each fetch, so snapshots should be about 15-22 minutes apart. Longer gaps
+    mean the sampler was stopped; much shorter ones mean an extra fetch outside the loop.
+
+unknown_link_ids:
+  severity: error
+  max_count: 0
+  why: Links in the snapshots that are not in the link metadata cannot be placed on a road or given a road category.
+
+unobserved_metadata_links:
+  severity: info
+  why: Links in the metadata never seen in any snapshot (reported for information).
+
+unknown_band_share:
+  severity: warn
+  max_share: 0.001
+  why: The DataMall documentation defines bands 1-8. Other values are kept in bronze and set to NULL in silver.
+
+sampler_log_consistency:
+  severity: warn
+  why: >
+    sampler.log gets one line per fetch made by the sampler loop. A different count from the number of snapshot
+    files means some files were fetched outside the loop or some fetches failed.
+
+od_vs_tapin:
+  severity: error
+  max_relative_diff: 0.001
+  why: >
+    Every OD trip starts with a tap-in, so monthly OD trips and stop tap-ins should agree closely for each day type.
+    A larger difference points to a truncated file or a load error.
+
+pv_stops_missing_from_master:
+  severity: warn
+  max_share_of_tap_ins: 0.01
+  why: Stops in the passenger volumes that are not in the current stop list (closed, renumbered or temporary stops).
+
+quarantine_share:
+  severity: warn
+  max_share: 0.0001
+  why: Share of source rows rejected by the batch ingest rules (see bronze/_quarantine).

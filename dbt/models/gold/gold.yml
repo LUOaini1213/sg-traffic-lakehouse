@@ -1,0 +1,222 @@
+version: 2
+
+models:
+  - name: gold_link_speed_hourly
+    description: >
+      Speed-band profile of each link by day type and hour of day, over all sampled snapshots. Grain: link_id x
+      day_type x hour_of_day. With only a few days of snapshots, n_days is small; read it before comparing hours.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [link_id, day_type, hour_of_day]
+    columns:
+      - name: link_id
+        description: LTA road link identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_link')
+                field: link_id
+              config:
+                severity: warn
+      - name: day_type
+        description: WEEKDAY or WEEKENDS/HOLIDAY.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['WEEKDAY', 'WEEKENDS/HOLIDAY']
+      - name: hour_of_day
+        description: Hour of day 0-23 (SGT).
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 23}
+      - name: n_obs
+        description: Snapshots with a known band in this cell.
+        tests:
+          - in_range:
+              arguments: {min_value: 1}
+      - name: n_days
+        description: Distinct dates contributing.
+      - name: mean_band
+        description: Mean speed band (1-8).
+        tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 1, max_value: 8}
+      - name: min_band
+        description: Lowest band seen.
+      - name: max_band
+        description: Highest band seen.
+      - name: share_congested
+        description: Share of observations with band <= var congestion_band_max (default 2, under 20 km/h).
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 1}
+      - name: mean_speed_lower_kmh
+        description: Mean of the band lower bounds, km/h (a lower bound on mean speed).
+
+  - name: gold_congestion_episodes
+    description: >
+      Runs of at least var congestion_min_snapshots consecutive snapshots with band <= var congestion_band_max on
+      road categories var congestion_road_categories (default expressways, major arterials and arterials).
+      Episodes never cross a sampling gap longer than var max_gap_minutes.
+    columns:
+      - name: episode_id
+        description: md5 of link_id and start time; stable across rebuilds.
+        tests: [unique, not_null]
+      - name: link_id
+        description: LTA road link identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_link')
+                field: link_id
+      - name: start_ts
+        description: First snapshot of the episode.
+        tests: [not_null]
+      - name: end_ts
+        description: Last snapshot of the episode.
+        tests: [not_null]
+      - name: n_snapshots
+        description: Consecutive congested snapshots.
+        tests:
+          - in_range:
+              arguments: {min_value: "{{ var('congestion_min_snapshots') }}"}
+      - name: worst_band
+        description: Lowest band during the episode.
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: "{{ var('congestion_band_max') }}"}
+      - name: span_minutes
+        description: Minutes from the first to the last congested snapshot (a lower bound on the episode's length).
+        tests:
+          - in_range:
+              arguments: {min_value: 0}
+
+  - name: gold_stop_demand_hourly
+    description: Tap-ins and tap-outs per stop, hour and day type, with per-day averages.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [year_month, day_type, hour, stop_code]
+    columns:
+      - name: year_month
+        description: Month, YYYY-MM.
+      - name: day_type
+        description: WEEKDAY or WEEKENDS/HOLIDAY.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['WEEKDAY', 'WEEKENDS/HOLIDAY']
+      - name: hour
+        description: Hour of day 0-23.
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 23}
+      - name: stop_code
+        description: Five-digit stop code.
+        tests: [not_null]
+      - name: stop_name
+        description: Stop description; NULL when the stop is not in the current stop list.
+      - name: tap_in
+        description: Monthly sum of tap-ins.
+      - name: tap_out
+        description: Monthly sum of tap-outs.
+      - name: n_days
+        description: Days of this type in the month.
+        tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 1, max_value: 31}
+      - name: avg_daily_tap_in
+        description: tap_in / n_days.
+        tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: avg_daily_tap_out
+        description: tap_out / n_days.
+
+  - name: gold_top_od_flows
+    description: The var top_od_n busiest stop-to-stop flows for each month and day type.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [year_month, day_type, flow_rank]
+    columns:
+      - name: flow_rank
+        description: 1 = busiest; ties broken by stop codes.
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: "{{ var('top_od_n') }}"}
+      - name: origin_stop_code
+        description: Origin stop.
+        tests: [not_null]
+      - name: destination_stop_code
+        description: Destination stop.
+        tests: [not_null]
+      - name: trips
+        description: Monthly trips, all hours.
+        tests:
+          - in_range:
+              arguments: {min_value: 1}
+      - name: avg_daily_trips
+        description: trips / n_days.
+
+  - name: gold_link_hour_features
+    description: >
+      One row per link and clock hour with at least one known band: features for a one-hour-ahead speed model.
+      next_hour_mean_band is the label and is NULL when the next clock hour was not sampled.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [link_id, obs_hour_ts]
+    columns:
+      - name: link_id
+        description: LTA road link identifier.
+        tests: [not_null]
+      - name: obs_hour_ts
+        description: Clock hour (SGT) the features describe.
+        tests: [not_null]
+      - name: hour_of_day
+        description: 0-23.
+      - name: iso_dow
+        description: ISO day of week, 1 = Monday.
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 7}
+      - name: is_weekend_or_holiday
+        description: Saturday, Sunday or MOM public holiday.
+      - name: road_category
+        description: LTA road category.
+      - name: length_m
+        description: Straight-line link length, metres.
+      - name: n_obs
+        description: Snapshots in the hour.
+        tests:
+          - in_range:
+              arguments: {min_value: 1}
+      - name: mean_band
+        description: Mean band in the hour.
+        tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 8}
+      - name: min_band
+        description: Lowest band in the hour.
+      - name: band_std
+        description: >
+          Sample standard deviation of the band; NULL with one observation. The largest possible value for bands
+          1-8 is 7 / sqrt(2) = 4.95 (two observations, bands 1 and 8).
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 4.95}
+      - name: share_congested
+        description: Share of observations with band <= var congestion_band_max.
+        tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 1}
+      - name: prev_hour_mean_band
+        description: mean_band of the previous clock hour, if it was sampled.
+      - name: next_hour_mean_band
+        description: Label. mean_band of the next clock hour, if it was sampled.

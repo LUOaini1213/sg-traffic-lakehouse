@@ -1,0 +1,28 @@
+[
+{
+"ServiceNo": "1",
+"Operator": "FIX",
+"Direction": 1,
+"Category": "TRUNK",
+"OriginCode": "01012",
+"DestinationCode": "10009",
+"AM_Peak_Freq": "08-10",
+"AM_Offpeak_Freq": "10-12",
+"PM_Peak_Freq": "08-10",
+"PM_Offpeak_Freq": "10-12",
+"LoopDesc": ""
+},
+{
+"ServiceNo": "2",
+"Operator": "FIX",
+"Direction": 1,
+"Category": "TRUNK",
+"OriginCode": "01012",
+"DestinationCode": "10009",
+"AM_Peak_Freq": "08-10",
+"AM_Offpeak_Freq": "10-12",
+"PM_Peak_Freq": "08-10",
+"PM_Offpeak_Freq": "10-12",
+"LoopDesc": ""
+}
+]

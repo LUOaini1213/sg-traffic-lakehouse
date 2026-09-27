@@ -1,0 +1,58 @@
+[
+{
+"ServiceNo": "1",
+"Operator": "FIX",
+"Direction": 1,
+"StopSequence": 1,
+"BusStopCode": "01012",
+"Distance": 0.0,
+"WD_FirstBus": "0600",
+"WD_LastBus": "2300",
+"SAT_FirstBus": "0600",
+"SAT_LastBus": "2300",
+"SUN_FirstBus": "0600",
+"SUN_LastBus": "2300"
+},
+{
+"ServiceNo": "1",
+"Operator": "FIX",
+"Direction": 1,
+"StopSequence": 2,
+"BusStopCode": "01013",
+"Distance": 0.6,
+"WD_FirstBus": "0600",
+"WD_LastBus": "2300",
+"SAT_FirstBus": "0600",
+"SAT_LastBus": "2300",
+"SUN_FirstBus": "0600",
+"SUN_LastBus": "2300"
+},
+{
+"ServiceNo": "1",
+"Operator": "FIX",
+"Direction": 1,
+"StopSequence": 3,
+"BusStopCode": "10009",
+"Distance": 1.9,
+"WD_FirstBus": "0600",
+"WD_LastBus": "2300",
+"SAT_FirstBus": "0600",
+"SAT_LastBus": "2300",
+"SUN_FirstBus": "0600",
+"SUN_LastBus": "2300"
+},
+{
+"ServiceNo": "2",
+"Operator": "FIX",
+"Direction": 1,
+"StopSequence": 1,
+"BusStopCode": "01012",
+"Distance": 0.0,
+"WD_FirstBus": "0600",
+"WD_LastBus": "2300",
+"SAT_FirstBus": "0600",
+"SAT_LastBus": "2300",
+"SUN_FirstBus": "0600",
+"SUN_LastBus": "2300"
+}
+]

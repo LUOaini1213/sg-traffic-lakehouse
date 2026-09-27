@@ -1,0 +1,43 @@
+name: sg_traffic
+version: "1.0.0"
+config-version: 2
+profile: sg_traffic
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets: ["target", "logs"]
+
+vars:
+  # Congestion episode: at least `congestion_min_snapshots` consecutive snapshots with band <= `congestion_band_max`
+  # (band 2 = 10-19 km/h), counted only on road categories where free flow is well above 20 km/h.
+  congestion_band_max: 2
+  congestion_min_snapshots: 3
+  congestion_road_categories: [1, 2, 3]
+  # A gap between snapshots longer than this starts a new sampling run; episodes never span a gap.
+  max_gap_minutes: 40
+  top_od_n: 50
+  calendar_start: "2026-01-01"
+  calendar_end: "2026-12-31"
+
+seeds:
+  sg_traffic:
+    +schema: ref
+    public_holidays_sg_2026:
+      +column_types: {holiday_date: date, holiday_name: varchar}
+    speed_band_ref:
+      +column_types: {speed_band: smallint, min_kmh: smallint, max_kmh: smallint, label: varchar}
+    road_category_ref:
+      +column_types: {road_category: tinyint, label: varchar}
+
+models:
+  sg_traffic:
+    silver:
+      +schema: silver
+      +materialized: table
+      +meta: {layer: silver, owner: "sg-traffic-lakehouse", contains_pii: false}
+    gold:
+      +schema: gold
+      +materialized: table
+      +meta: {layer: gold, owner: "sg-traffic-lakehouse", contains_pii: false}

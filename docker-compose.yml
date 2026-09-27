@@ -1,0 +1,73 @@
+# Local stand-ins for cloud services: Redpanda (Kafka API) and MinIO (S3 API). Airflow is optional (profile "airflow").
+# Host ports are in the 29xxx/28xxx range so they do not clash with other local stacks.
+name: sgtl
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v25.3.17
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:29092
+      - --default-log-level=warn
+    ports: ["29092:19092", "29644:9644"]
+    volumes: ["redpanda-data:/var/lib/redpanda/data"]
+    mem_limit: 1536m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      retries: 30
+
+  minio:
+    # minio/minio (Docker Hub) and quay.io/minio/minio could not be pulled on 2026-09-27; this is Chainguard's
+    # build of the MinIO server (RELEASE.2026-09-22T19-25-18Z), pinned by digest.
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?copy .env.example to .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?copy .env.example to .env}
+    ports: ["29000:9000", "29001:9001"]
+    volumes: ["minio-data:/data"]
+    mem_limit: 512m
+    restart: unless-stopped
+
+  airflow:
+    profiles: ["airflow"]
+    build: {context: ., dockerfile: docker/airflow/Dockerfile}
+    image: sgtl-airflow:local
+    command: standalone
+    depends_on: [minio]
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/project/airflow/dags
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"   # local only: UI without login
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "30"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIPELINE_PYTHON: /opt/airflow/pipeline/bin/python
+      PYTHONPATH: /opt/project/src
+      SOURCE_DIR: /data/source
+      LAKE_ROOT: s3://sgtl-lake
+      S3_ENDPOINT: minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      DUCKDB_PATH: /data/warehouse/warehouse.duckdb
+      DUCKDB_MEMORY: 1000MB
+      RESULTS_DIR: /opt/project/results/airflow
+      SNAPSHOT_MIN_AGE_S: "120"
+    volumes:
+      - .:/opt/project
+      - ${SOURCE_DIR_HOST:?set SOURCE_DIR_HOST in .env}:/data/source:ro
+      - airflow-warehouse:/data/warehouse
+    ports: ["28080:8080"]
+    mem_limit: 4g
+
+volumes:
+  redpanda-data:
+  minio-data:
+  airflow-warehouse:

@@ -1,0 +1,9 @@
+{
+  "ingest-batch": 17.59,
+  "ingest-speedbands": 5.97,
+  "profile": 7.53,
+  "dbt-build": 20.43,
+  "quality": 0.69,
+  "publish": 7.21,
+  "report": 0.82
+}

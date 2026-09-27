@@ -1,0 +1,41 @@
+{
+  "until": "202609271923",
+  "identical_files": true,
+  "identical_content": true,
+  "run_seconds": {
+    "a": 93.6,
+    "b": 108.7
+  },
+  "tables": {
+    "gold_link_speed_hourly": {
+      "rows": 1293678,
+      "file_sha256_equal": true,
+      "content_sha256_equal": true,
+      "content_sha256": "ddd1842f8432be60ea271494f9a1f6f59be23c80f2b7e1baac850fb142c34d5c"
+    },
+    "gold_congestion_episodes": {
+      "rows": 11015,
+      "file_sha256_equal": true,
+      "content_sha256_equal": true,
+      "content_sha256": "f5c9ace60969a8842d52492c9d18c726b1be409064922f523034b313167505ff"
+    },
+    "gold_stop_demand_hourly": {
+      "rows": 812430,
+      "file_sha256_equal": true,
+      "content_sha256_equal": true,
+      "content_sha256": "5e9e99e757e7086cc2e0d8b7db83f9a02df2a00184e755e2abd52b46599e96af"
+    },
+    "gold_top_od_flows": {
+      "rows": 200,
+      "file_sha256_equal": true,
+      "content_sha256_equal": true,
+      "content_sha256": "9ed7fb510b15e0d0803addeada08d7cbe90805586769f9a6bc9d5990ca3b8661"
+    },
+    "gold_link_hour_features": {
+      "rows": 1437420,
+      "file_sha256_equal": true,
+      "content_sha256_equal": true,
+      "content_sha256": "bdd20dc929b349c683077bb7edc14f34cc6a38b58b04f92d9bf7b815ee5f409b"
+    }
+  }
+}

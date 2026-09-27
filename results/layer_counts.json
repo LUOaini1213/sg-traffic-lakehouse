@@ -1,0 +1,55 @@
+{
+  "bronze": {
+    "speedbands": {
+      "files": 75,
+      "rows": 3594675
+    },
+    "speedband_links": {
+      "files": 1,
+      "rows": 143787
+    },
+    "pv_stop": {
+      "files": 4,
+      "rows": 812430
+    },
+    "pv_od": {
+      "files": 2,
+      "rows": 12053007
+    },
+    "bus_stops": {
+      "files": 1,
+      "rows": 5209
+    },
+    "bus_services": {
+      "files": 1,
+      "rows": 802
+    },
+    "bus_routes": {
+      "files": 1,
+      "rows": 26842
+    },
+    "_quarantine": {
+      "files": 4,
+      "rows": 14
+    }
+  },
+  "silver": {
+    "stg_speedband_obs": 3594675,
+    "dim_snapshot": 25,
+    "dim_link": 143787,
+    "dim_calendar": 365,
+    "dim_month_day_counts": 24,
+    "dim_bus_stop": 5209,
+    "dim_bus_service": 802,
+    "fct_bus_route_stop": 26842,
+    "stg_stop_pv": 812430,
+    "stg_od": 12053007
+  },
+  "gold": {
+    "gold_link_speed_hourly": 1293678,
+    "gold_congestion_episodes": 11015,
+    "gold_stop_demand_hourly": 812430,
+    "gold_top_od_flows": 200,
+    "gold_link_hour_features": 1437420
+  }
+}

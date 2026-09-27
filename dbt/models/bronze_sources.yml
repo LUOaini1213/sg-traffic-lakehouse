@@ -1,0 +1,66 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Raw data landed in the lake by the Python ingest code (src/lakehouse). Parquet, partitioned as shown per table.
+      Column names and values are as published by LTA DataMall; only types are enforced.
+    meta:
+      layer: bronze
+      provider: "Land Transport Authority (LTA) DataMall"
+      licence: "Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md)"
+      contains_pii: false
+    tables:
+      - name: speedbands
+        description: >
+          Traffic speed band of every road link in each sampled snapshot (DataMall Traffic Speed Bands v4).
+          Written by the Kafka consumer or the file backfill, one object per snapshot at
+          obs_date=YYYY-MM-DD/obs_hour=HH/snapshot=YYYYMMDDTHHMM.parquet. Unique on (snapshot_ts, link_id).
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/speedbands/**/*.parquet', hive_partitioning = true, union_by_name = true)"
+          source_endpoint: "ltaodataservice/v4/TrafficSpeedBands"
+        columns:
+          - name: snapshot_ts
+            description: Event time of the snapshot, SGT (UTC+8), taken from the sampler's file name (fetch start).
+          - name: link_id
+            description: LTA road link identifier.
+          - name: speed_band
+            description: "Speed band 1-8 as published (1 = 0-9 km/h ... 8 = 70 km/h or more); 0 is undocumented."
+          - name: min_speed
+            description: Lower bound of the band, km/h.
+          - name: max_speed
+            description: Upper bound of the band, km/h (999 for band 8).
+          - name: _source
+            description: "'stream' (Kafka consumer) or 'file' (file backfill); the first writer of a key wins."
+          - name: _ingested_at
+            description: Wall-clock time the row was first written to bronze.
+      - name: speedband_links
+        description: Link geometry and road metadata for the speed-band links, one pull (bronze/speedband_links/data.parquet).
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/speedband_links/**/*.parquet', union_by_name = true)"
+      - name: pv_stop
+        description: >
+          Passenger Volume by Bus Stops: monthly tap-in and tap-out counts per stop, hour and day type, summed over
+          all days of that type in the month. Partitioned by month=YYYY-MM.
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/pv_stop/**/*.parquet', hive_partitioning = true, union_by_name = true)"
+          source_endpoint: "ltaodataservice/PV/Bus"
+      - name: pv_od
+        description: >
+          Passenger Volume by Origin Destination Bus Stops: monthly trips per origin stop, destination stop, hour and
+          day type. About 6 million rows a month. Partitioned by month=YYYY-MM.
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/pv_od/**/*.parquet', hive_partitioning = true, union_by_name = true)"
+          source_endpoint: "ltaodataservice/PV/ODBus"
+      - name: bus_stops
+        description: Bus stop master (BusStops endpoint), partitioned by pull date as_of=YYYYMMDD.
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/bus_stops/**/*.parquet', hive_partitioning = true, union_by_name = true)"
+      - name: bus_services
+        description: Bus services (BusServices endpoint), partitioned by pull date as_of=YYYYMMDD.
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/bus_services/**/*.parquet', hive_partitioning = true, union_by_name = true)"
+      - name: bus_routes
+        description: Stop sequence of every service direction (BusRoutes endpoint), partitioned by pull date as_of=YYYYMMDD.
+        meta:
+          external_location: "read_parquet('{{ env_var('LAKE_ROOT') }}/bronze/bus_routes/**/*.parquet', hive_partitioning = true, union_by_name = true)"

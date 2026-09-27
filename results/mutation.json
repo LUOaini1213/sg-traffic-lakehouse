@@ -1,0 +1,8 @@
+{
+  "tests_passed": 48,
+  "dbt_tests": 87,
+  "total": 35,
+  "killed": 35,
+  "python": 24,
+  "sql": 11
+}

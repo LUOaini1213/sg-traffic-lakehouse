@@ -6,6 +6,15 @@
       "year_month": "2026-02",
       "bytes": 8188618,
       "sha256": "75c75608cde1ae9e50f56ebce2db204530917dd5f4e6939eca66997f4305ee08",
+      "source": {
+        "sha256": "75c75608cde1ae9e50f56ebce2db204530917dd5f4e6939eca66997f4305ee08",
+        "rows": 203124,
+        "well_formed_rows": 203124,
+        "sums": {
+          "TOTAL_TAP_IN_VOLUME": 106637940,
+          "TOTAL_TAP_OUT_VOLUME": 106637946
+        }
+      },
       "rows_read": 203124,
       "rows_valid": 203121,
       "rows_quarantined": 3,
@@ -20,7 +29,8 @@
         "TOTAL_TAP_IN_VOLUME": 0,
         "TOTAL_TAP_OUT_VOLUME": 3
       },
-      "bronze_path": "bronze/pv_stop/month=2026-02"
+      "bronze_table": "bronze/pv_stop",
+      "partition": "month = '2026-02'"
     },
     {
       "dataset": "pv_stop",
@@ -28,6 +38,15 @@
       "year_month": "2026-06",
       "bytes": 8171105,
       "sha256": "05a29045dcc22339f2341406ccb410a7931187f9b174d43b977f8cdfb1f7ae75",
+      "source": {
+        "sha256": "05a29045dcc22339f2341406ccb410a7931187f9b174d43b977f8cdfb1f7ae75",
+        "rows": 202740,
+        "well_formed_rows": 202740,
+        "sums": {
+          "TOTAL_TAP_IN_VOLUME": 107711761,
+          "TOTAL_TAP_OUT_VOLUME": 107712428
+        }
+      },
       "rows_read": 202740,
       "rows_valid": 202732,
       "rows_quarantined": 8,
@@ -42,7 +61,8 @@
         "TOTAL_TAP_IN_VOLUME": 0,
         "TOTAL_TAP_OUT_VOLUME": 13
       },
-      "bronze_path": "bronze/pv_stop/month=2026-06"
+      "bronze_table": "bronze/pv_stop",
+      "partition": "month = '2026-06'"
     },
     {
       "dataset": "pv_stop",
@@ -50,6 +70,15 @@
       "year_month": "2026-07",
       "bytes": 8196377,
       "sha256": "95b7c4b458f1113123c974cbbba5afb10a446205d86b44f7f19d369859b45837",
+      "source": {
+        "sha256": "95b7c4b458f1113123c974cbbba5afb10a446205d86b44f7f19d369859b45837",
+        "rows": 203100,
+        "well_formed_rows": 203100,
+        "sums": {
+          "TOTAL_TAP_IN_VOLUME": 123978461,
+          "TOTAL_TAP_OUT_VOLUME": 123982254
+        }
+      },
       "rows_read": 203100,
       "rows_valid": 203099,
       "rows_quarantined": 1,
@@ -64,7 +93,8 @@
         "TOTAL_TAP_IN_VOLUME": 0,
         "TOTAL_TAP_OUT_VOLUME": 3
       },
-      "bronze_path": "bronze/pv_stop/month=2026-07"
+      "bronze_table": "bronze/pv_stop",
+      "partition": "month = '2026-07'"
     },
     {
       "dataset": "pv_stop",
@@ -72,6 +102,15 @@
       "year_month": "2026-08",
       "bytes": 8229304,
       "sha256": "fe78b4f0a0c9d467365d7c58cca2dcdaba9356cba4b6afe82b421a110f851389",
+      "source": {
+        "sha256": "fe78b4f0a0c9d467365d7c58cca2dcdaba9356cba4b6afe82b421a110f851389",
+        "rows": 203480,
+        "well_formed_rows": 203480,
+        "sums": {
+          "TOTAL_TAP_IN_VOLUME": 122914085,
+          "TOTAL_TAP_OUT_VOLUME": 122914712
+        }
+      },
       "rows_read": 203480,
       "rows_valid": 203478,
       "rows_quarantined": 2,
@@ -86,7 +125,8 @@
         "TOTAL_TAP_IN_VOLUME": 0,
         "TOTAL_TAP_OUT_VOLUME": 3
       },
-      "bronze_path": "bronze/pv_stop/month=2026-08"
+      "bronze_table": "bronze/pv_stop",
+      "partition": "month = '2026-08'"
     },
     {
       "dataset": "pv_od",
@@ -94,6 +134,14 @@
       "year_month": "2026-07",
       "bytes": 242382765,
       "sha256": "878caf8c414a1281c6ebd1f3ffc84af753062185e8d697f9af286a1113ae9b47",
+      "source": {
+        "sha256": "878caf8c414a1281c6ebd1f3ffc84af753062185e8d697f9af286a1113ae9b47",
+        "rows": 5932843,
+        "well_formed_rows": 5932843,
+        "sums": {
+          "TOTAL_TRIPS": 123960291
+        }
+      },
       "rows_read": 5932843,
       "rows_valid": 5932843,
       "rows_quarantined": 0,
@@ -104,7 +152,8 @@
       "quarantined_sums": {
         "TOTAL_TRIPS": 0
       },
-      "bronze_path": "bronze/pv_od/month=2026-07"
+      "bronze_table": "bronze/pv_od",
+      "partition": "month = '2026-07'"
     },
     {
       "dataset": "pv_od",
@@ -112,6 +161,14 @@
       "year_month": "2026-08",
       "bytes": 252004056,
       "sha256": "00735e24e141ece247a1aee836dbd42dc3b379df52d6dc2a2a1026642a16c28a",
+      "source": {
+        "sha256": "00735e24e141ece247a1aee836dbd42dc3b379df52d6dc2a2a1026642a16c28a",
+        "rows": 6120164,
+        "well_formed_rows": 6120164,
+        "sums": {
+          "TOTAL_TRIPS": 122895479
+        }
+      },
       "rows_read": 6120164,
       "rows_valid": 6120164,
       "rows_quarantined": 0,
@@ -122,47 +179,70 @@
       "quarantined_sums": {
         "TOTAL_TRIPS": 0
       },
-      "bronze_path": "bronze/pv_od/month=2026-08"
+      "bronze_table": "bronze/pv_od",
+      "partition": "month = '2026-08'"
     },
     {
       "dataset": "speedband_links",
       "file": "speedband_links.csv",
       "bytes": 9428802,
       "sha256": "a5ac603de36d788871b7ddbfbec4a844c61ea0c176b41b44acaec6a83ca6a978",
+      "source": {
+        "sha256": "a5ac603de36d788871b7ddbfbec4a844c61ea0c176b41b44acaec6a83ca6a978",
+        "rows": 143787,
+        "well_formed_rows": 143787,
+        "sums": {}
+      },
       "rows_read": 143787,
       "rows_valid": 143787,
       "rows_quarantined": 0,
-      "bronze_path": "bronze/speedband_links/data.parquet"
+      "quarantine_reasons": {},
+      "bronze_table": "bronze/speedband_links"
     },
     {
       "dataset": "bus_stops",
       "file": "BusStops_20260926.json",
       "bytes": 770394,
       "sha256": "9efbea4f3bf146784006db8842a0c84e39d80c04ad4bd193ed64e5c176235842",
+      "source": {
+        "sha256": "9efbea4f3bf146784006db8842a0c84e39d80c04ad4bd193ed64e5c176235842",
+        "rows": 5209
+      },
       "rows_read": 5209,
       "rows_valid": 5209,
       "rows_quarantined": 0,
-      "bronze_path": "bronze/bus_stops/as_of=20260926/data.parquet"
+      "bronze_table": "bronze/bus_stops",
+      "partition": "as_of = '20260926'"
     },
     {
       "dataset": "bus_services",
       "file": "BusServices_20260926.json",
       "bytes": 201966,
       "sha256": "fd9e0d258f80298c0860baeaa753ca8d30b9511f2177af7842ab7217a508ec13",
+      "source": {
+        "sha256": "fd9e0d258f80298c0860baeaa753ca8d30b9511f2177af7842ab7217a508ec13",
+        "rows": 802
+      },
       "rows_read": 802,
       "rows_valid": 802,
       "rows_quarantined": 0,
-      "bronze_path": "bronze/bus_services/as_of=20260926/data.parquet"
+      "bronze_table": "bronze/bus_services",
+      "partition": "as_of = '20260926'"
     },
     {
       "dataset": "bus_routes",
       "file": "BusRoutes_20260926.json",
       "bytes": 6847697,
       "sha256": "f2eb14d9e275f60e523178b4cc10ef139f47b30f05e488b5be3147bc98f0c60e",
+      "source": {
+        "sha256": "f2eb14d9e275f60e523178b4cc10ef139f47b30f05e488b5be3147bc98f0c60e",
+        "rows": 26842
+      },
       "rows_read": 26842,
       "rows_valid": 26842,
       "rows_quarantined": 0,
-      "bronze_path": "bronze/bus_routes/as_of=20260926/data.parquet"
+      "bronze_table": "bronze/bus_routes",
+      "partition": "as_of = '20260926'"
     }
   ]
 }

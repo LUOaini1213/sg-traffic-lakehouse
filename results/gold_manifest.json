@@ -1,32 +1,42 @@
 {
   "gold_link_speed_hourly": {
-    "path": "gold/gold_link_speed_hourly/data.parquet",
+    "path": "gold/gold_link_speed_hourly",
+    "delta_version": 0,
     "rows": 1293678,
-    "file_sha256": "c6695f82d3824ed742e999c52a5420dc0590397efcdec0d82f529f788bee4073",
+    "files": 1,
+    "file_sha256": "cab616689bad6d08217f6b6c7f44a66282ff0e17581f3fdf5af25f66d85399d4",
     "content_sha256": "ddd1842f8432be60ea271494f9a1f6f59be23c80f2b7e1baac850fb142c34d5c"
   },
   "gold_congestion_episodes": {
-    "path": "gold/gold_congestion_episodes/data.parquet",
+    "path": "gold/gold_congestion_episodes",
+    "delta_version": 0,
     "rows": 11015,
-    "file_sha256": "674389204c3ac10195a9348139deb72c9ca7bd33ae96ceec27887c7dc19006ed",
+    "files": 1,
+    "file_sha256": "9695651c468797cea17964d241a95660a297423f157095431343aae845c4cb9c",
     "content_sha256": "f5c9ace60969a8842d52492c9d18c726b1be409064922f523034b313167505ff"
   },
   "gold_stop_demand_hourly": {
-    "path": "gold/gold_stop_demand_hourly/data.parquet",
+    "path": "gold/gold_stop_demand_hourly",
+    "delta_version": 0,
     "rows": 812430,
-    "file_sha256": "86d475bfc747a4e162e745785d6fd6aadab84b8fd7efc78d55ad65d989e8bc1e",
+    "files": 1,
+    "file_sha256": "962e66cdb97e93953092a35b93b06e902fdda16529a6c305e61af96a8ef8d92b",
     "content_sha256": "5e9e99e757e7086cc2e0d8b7db83f9a02df2a00184e755e2abd52b46599e96af"
   },
   "gold_top_od_flows": {
-    "path": "gold/gold_top_od_flows/data.parquet",
+    "path": "gold/gold_top_od_flows",
+    "delta_version": 0,
     "rows": 200,
-    "file_sha256": "03cdf64a337137a92d1c4a7e0a9086d9982b3162c5545e1bf166cfb73636e9a8",
+    "files": 1,
+    "file_sha256": "8016cfc9a5d88e8cdf6bcf8857c64051641ddd656e35d1df85f71b14106412ec",
     "content_sha256": "9ed7fb510b15e0d0803addeada08d7cbe90805586769f9a6bc9d5990ca3b8661"
   },
   "gold_link_hour_features": {
-    "path": "gold/gold_link_hour_features/data.parquet",
+    "path": "gold/gold_link_hour_features",
+    "delta_version": 0,
     "rows": 1437420,
-    "file_sha256": "1815ac950e990493918f3e0662767f3a2152fa12aa2a105eb16552c137c34ddc",
+    "files": 1,
+    "file_sha256": "be7533be1a74cf9281327d7633beb1ee98642f64c271f67cfe74e2c90ec0a025",
     "content_sha256": "bdd20dc929b349c683077bb7edc14f34cc6a38b58b04f92d9bf7b815ee5f409b"
   }
 }

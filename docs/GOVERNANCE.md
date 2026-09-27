@@ -6,11 +6,12 @@ may see it, how it is checked, and how the layers depend on each other.
 ## Sources and licence
 
 All input data comes from **LTA DataMall** (Land Transport Authority, Singapore). LTA's DataMall licence page
-(checked 2026-09-27) states that DataMall data is made available under the **Singapore Open Data Licence
-version 1.0**. The licence requires attribution in this form:
+(checked 2026-09-27, [datamall.lta.gov.sg](https://datamall.lta.gov.sg/content/datamall/en/SingaporeOpenDataLicence.html))
+states that DataMall data is made available under the **Singapore Open Data Licence version 1.0**, whose text is at
+<https://data.gov.sg/open-data-licence>. The licence requires attribution in this form, with a link to the licence:
 
 > Contains information from {name of dataset} accessed on {date of access} from LTA DataMall which is made
-> available under the terms of the Singapore Open Data Licence version 1.0
+> available under the terms of the [Singapore Open Data Licence version 1.0](https://data.gov.sg/open-data-licence)
 
 For this repository:
 
@@ -44,10 +45,15 @@ layers, which are published on data.gov.sg under the Singapore Open Data Licence
 
 Every run records its inputs:
 
-- `results/batch_ingest.json`: for each monthly or static file, its name, size, SHA-256, rows read, rows loaded,
-  rows quarantined and why, and the sums of the volume columns.
-- `results/speedband_files.json`: for each speed-band snapshot, its event time, SHA-256, rows and bronze object.
-- Bronze speed-band rows carry `_source` (stream or file) and `_ingested_at`.
+- `results/batch_ingest.json`: for each monthly or static file, its name, size, SHA-256, the row count and volume
+  sums from an independent Python pass over the raw file, rows loaded, rows quarantined and why.
+- The same SHA-256 and source row count are written into the metadata of the Delta commit that loaded the file
+  (`DeltaTable.history()` shows them next to the version they produced).
+- `results/speedband_files.json`: for each speed-band snapshot, its event time, SHA-256, source rows, rows
+  quarantined, repeated links, and rows added to bronze.
+- Bronze speed-band rows carry `_source` (stream or file), `_ingested_at` (UTC) and `_late` (the consumer's
+  watermark verdict). Stream messages that could not be decoded are kept in `bronze/_dead_letter/speedband_stream`
+  with their topic, partition, offset and the reason.
 
 ## Classification
 
@@ -69,9 +75,12 @@ documentation, not enforcement.
 
 ## Quality controls
 
-1. **Ingest:** header must match exactly; values that fail a cast or a domain rule are quarantined with a reason;
-   bronze row counts and volume sums are reconciled with the source (`results/profile_bronze.md`).
-2. **dbt tests:** not-null, unique and composite keys, accepted values, ranges, relationships, and two singular
-   tests (bronze partition equals event time; episodes of a link do not overlap).
+1. **Ingest:** header must match exactly; malformed lines and values that fail a cast or a domain rule are
+   quarantined with a reason (`bronze/_quarantine/<dataset>`); bronze + quarantine is reconciled with row counts
+   and volume sums taken independently from the raw files (`results/profile_bronze.md`).
+2. **dbt tests:** not-null, unique and composite keys, accepted values, ranges, relationships, and singular tests
+   (bronze partition equals event time; an episode stays within one sampling run and covers consecutive
+   snapshots; gold keeps every silver row through its inner joins; the calendar's years have public holidays).
 3. **Custom checks** with documented thresholds (`config/quality_thresholds.yml`), reported in
-   `results/quality_report.md`. Airflow runs them in strict mode, so an error-severity failure stops publishing.
+   `results/quality_report.md`. Airflow runs them in strict mode without retries, so an error-severity failure
+   stops publishing.

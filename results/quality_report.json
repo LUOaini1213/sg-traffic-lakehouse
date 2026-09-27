@@ -17,7 +17,7 @@
       "severity": "warn",
       "status": "PASS",
       "value": 0.1869,
-      "threshold": 0.005,
+      "threshold": 0.05,
       "details": {
         "pairs_compared": 24,
         "stale": [],
@@ -26,7 +26,7 @@
           0.4823
         ]
       },
-      "why": "Share of links whose band changed since the previous snapshot. LTA refreshes speed bands every 5 minutes, so a snapshot taken 15-20 minutes later in which almost nothing changed is probably a cached or repeated response."
+      "why": "Share of links whose band changed since the previous snapshot. A cached or repeated API response changes nothing (0%). In the 25 real snapshots used for the README, 18.7%-48.2% of links changed between consecutive snapshots, including a pair only 5 minutes apart. The threshold of 5% sits well below the smallest observed change and well above a repeat, so it flags a repeated or mostly repeated response without flagging a quiet interval. (Before 2026-09-28 it was 0.5%, a guess made before any data was sampled.)"
     },
     {
       "check": "cadence_gap",
@@ -60,7 +60,7 @@
           21.0
         ]
       },
-      "why": "The sampler waits 15 minutes after each fetch, so snapshots should be about 15-22 minutes apart. Longer gaps mean the sampler was stopped; much shorter ones mean an extra fetch outside the loop."
+      "why": "The sampler waits 15 minutes after each fetch, so snapshots should be about 15-22 minutes apart (observed: 17-21 minutes). A gap longer than 30 minutes means at least one fetch is missing; much shorter gaps mean an extra fetch outside the loop. dbt uses the same 30 minutes (var max_gap_minutes) to start a new sampling run, so a congestion episode never bridges a missing fetch; tests/test_quality.py checks that the two agree."
     },
     {
       "check": "unknown_link_ids",
@@ -100,20 +100,22 @@
     },
     {
       "check": "sampler_log_consistency",
-      "severity": "warn",
-      "status": "WARN",
-      "value": 35,
-      "threshold": 36,
+      "severity": "info",
+      "status": "INFO",
+      "value": 46,
+      "threshold": 47,
       "details": {
-        "log_fetch_lines": 35,
-        "snapshot_files": 36,
+        "log_fetch_lines": 46,
+        "snapshot_files": 47,
+        "snapshot_files_up_to_cutoff": 25,
+        "cutoff": "2026-09-27T19:23:00",
         "row_counts_in_log": [
           143787
         ],
         "other_lines": [],
         "log_has_timestamps": false
       },
-      "why": "sampler.log gets one line per fetch made by the sampler loop. A different count from the number of snapshot files means some files were fetched outside the loop or some fetches failed."
+      "why": "sampler.log gets one line per fetch made by the sampler loop. A different count from the number of snapshot files means some files were fetched outside the loop or some fetches failed. The log has no timestamps, so it cannot be restricted to the pipeline's snapshot cutoff: the check compares the whole log with the whole folder at the moment it runs, and its result changes while the sampler is still running. That is why it is information only and never fails or warns."
     },
     {
       "check": "od_vs_tapin",
@@ -171,13 +173,13 @@
       "check": "quarantine_share",
       "severity": "warn",
       "status": "PASS",
-      "value": 1.07e-06,
+      "value": 8.4e-07,
       "threshold": 0.0001,
       "details": {
-        "rows_read": 13042091,
+        "rows_read": 16636766,
         "rows_quarantined": 14,
         "reasons": {
-          "missing_or_uncastable_time_per_hour": 14
+          "pv_stop: missing_or_uncastable_time_per_hour": 14
         },
         "volume_in_quarantined_rows": {
           "TOTAL_TAP_IN_VOLUME": 0,

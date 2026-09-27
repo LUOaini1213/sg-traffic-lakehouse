@@ -3,6 +3,7 @@
     {
       "dataset": "speedbands",
       "files": 75,
+      "delta_version": 75,
       "rows": 3594675,
       "key": [
         "snapshot_ts",
@@ -48,9 +49,15 @@
         },
         "_ingested_at": {
           "nulls": 0,
-          "min": "2026-09-27 19:41:21.503",
-          "max": "2026-09-27 19:42:24.575",
-          "approx_distinct": 71
+          "min": "2026-09-27 18:59:24.937906",
+          "max": "2026-09-27 19:01:38.040424",
+          "approx_distinct": 75
+        },
+        "_late": {
+          "nulls": 0,
+          "min": "false",
+          "max": "true",
+          "approx_distinct": 2
         },
         "obs_date": {
           "nulls": 0,
@@ -63,12 +70,19 @@
           "min": "15",
           "max": "23",
           "approx_distinct": 7
+        },
+        "part": {
+          "nulls": 0,
+          "min": "0",
+          "max": "2",
+          "approx_distinct": 3
         }
       }
     },
     {
       "dataset": "speedband_links",
       "files": 1,
+      "delta_version": 0,
       "rows": 143787,
       "key": [
         "LinkID"
@@ -122,6 +136,7 @@
     {
       "dataset": "pv_stop",
       "files": 4,
+      "delta_version": 3,
       "rows": 812430,
       "key": [
         "YEAR_MONTH",
@@ -184,6 +199,7 @@
     {
       "dataset": "pv_od",
       "files": 2,
+      "delta_version": 1,
       "rows": 12053007,
       "key": [
         "YEAR_MONTH",
@@ -247,6 +263,7 @@
     {
       "dataset": "bus_stops",
       "files": 1,
+      "delta_version": 0,
       "rows": 5209,
       "key": [
         "as_of",
@@ -295,6 +312,7 @@
     {
       "dataset": "bus_services",
       "files": 1,
+      "delta_version": 0,
       "rows": 802,
       "key": [
         "as_of",
@@ -380,6 +398,7 @@
     {
       "dataset": "bus_routes",
       "files": 1,
+      "delta_version": 0,
       "rows": 26842,
       "key": [
         "as_of",
@@ -474,72 +493,82 @@
     {
       "dataset": "pv_stop",
       "file": "transport_node_bus_202602.csv",
-      "source_valid_rows": 203121,
+      "source_sha256": "75c75608cde1ae9e50f56ebce2db204530917dd5f4e6939eca66997f4305ee08",
+      "source_rows": 203124,
       "bronze_rows": 203121,
+      "quarantined_rows": 3,
       "source_sums": {
         "TOTAL_TAP_IN_VOLUME": 106637940,
-        "TOTAL_TAP_OUT_VOLUME": 106637943
+        "TOTAL_TAP_OUT_VOLUME": 106637946
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TAP_IN_VOLUME": 106637940,
-        "TOTAL_TAP_OUT_VOLUME": 106637943
+        "TOTAL_TAP_OUT_VOLUME": 106637946
       },
       "match": true
     },
     {
       "dataset": "pv_stop",
       "file": "transport_node_bus_202606.csv",
-      "source_valid_rows": 202732,
+      "source_sha256": "05a29045dcc22339f2341406ccb410a7931187f9b174d43b977f8cdfb1f7ae75",
+      "source_rows": 202740,
       "bronze_rows": 202732,
+      "quarantined_rows": 8,
       "source_sums": {
         "TOTAL_TAP_IN_VOLUME": 107711761,
-        "TOTAL_TAP_OUT_VOLUME": 107712415
+        "TOTAL_TAP_OUT_VOLUME": 107712428
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TAP_IN_VOLUME": 107711761,
-        "TOTAL_TAP_OUT_VOLUME": 107712415
+        "TOTAL_TAP_OUT_VOLUME": 107712428
       },
       "match": true
     },
     {
       "dataset": "pv_stop",
       "file": "transport_node_bus_202607.csv",
-      "source_valid_rows": 203099,
+      "source_sha256": "95b7c4b458f1113123c974cbbba5afb10a446205d86b44f7f19d369859b45837",
+      "source_rows": 203100,
       "bronze_rows": 203099,
+      "quarantined_rows": 1,
       "source_sums": {
         "TOTAL_TAP_IN_VOLUME": 123978461,
-        "TOTAL_TAP_OUT_VOLUME": 123982251
+        "TOTAL_TAP_OUT_VOLUME": 123982254
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TAP_IN_VOLUME": 123978461,
-        "TOTAL_TAP_OUT_VOLUME": 123982251
+        "TOTAL_TAP_OUT_VOLUME": 123982254
       },
       "match": true
     },
     {
       "dataset": "pv_stop",
       "file": "transport_node_bus_202608.csv",
-      "source_valid_rows": 203478,
+      "source_sha256": "fe78b4f0a0c9d467365d7c58cca2dcdaba9356cba4b6afe82b421a110f851389",
+      "source_rows": 203480,
       "bronze_rows": 203478,
+      "quarantined_rows": 2,
       "source_sums": {
         "TOTAL_TAP_IN_VOLUME": 122914085,
-        "TOTAL_TAP_OUT_VOLUME": 122914709
+        "TOTAL_TAP_OUT_VOLUME": 122914712
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TAP_IN_VOLUME": 122914085,
-        "TOTAL_TAP_OUT_VOLUME": 122914709
+        "TOTAL_TAP_OUT_VOLUME": 122914712
       },
       "match": true
     },
     {
       "dataset": "pv_od",
       "file": "origin_destination_bus_202607.csv",
-      "source_valid_rows": 5932843,
+      "source_sha256": "878caf8c414a1281c6ebd1f3ffc84af753062185e8d697f9af286a1113ae9b47",
+      "source_rows": 5932843,
       "bronze_rows": 5932843,
+      "quarantined_rows": 0,
       "source_sums": {
         "TOTAL_TRIPS": 123960291
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TRIPS": 123960291
       },
       "match": true
@@ -547,14 +576,229 @@
     {
       "dataset": "pv_od",
       "file": "origin_destination_bus_202608.csv",
-      "source_valid_rows": 6120164,
+      "source_sha256": "00735e24e141ece247a1aee836dbd42dc3b379df52d6dc2a2a1026642a16c28a",
+      "source_rows": 6120164,
       "bronze_rows": 6120164,
+      "quarantined_rows": 0,
       "source_sums": {
         "TOTAL_TRIPS": 122895479
       },
-      "bronze_sums": {
+      "bronze_plus_quarantine_sums": {
         "TOTAL_TRIPS": 122895479
       },
+      "match": true
+    },
+    {
+      "dataset": "speedband_links",
+      "file": "speedband_links.csv",
+      "source_sha256": "a5ac603de36d788871b7ddbfbec4a844c61ea0c176b41b44acaec6a83ca6a978",
+      "source_rows": 143787,
+      "bronze_rows": 143787,
+      "quarantined_rows": 0,
+      "source_sums": {},
+      "bronze_plus_quarantine_sums": {},
+      "match": true
+    }
+  ],
+  "speedband_reconciliation": [
+    {
+      "file": "sb_20260926_1928.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_1933.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_1951.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2010.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2028.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2045.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2103.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2124.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2144.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2205.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2225.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2243.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260926_2301.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1550.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1611.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1631.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1651.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1711.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1731.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1750.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1808.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1826.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1844.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1902.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
+      "match": true
+    },
+    {
+      "file": "sb_20260927_1923.csv.gz",
+      "source_rows": 143787,
+      "bronze_distinct_links": 143787,
+      "quarantined_rows": 0,
+      "repeated_links_in_file": 0,
       "match": true
     }
   ],

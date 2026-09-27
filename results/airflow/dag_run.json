@@ -1,65 +1,67 @@
 {
   "dag_id": "sg_traffic_lakehouse",
-  "run_id": "manual__20260927T221227",
+  "run_id": "manual__20260928T040548",
   "state": "success",
   "conf": {
     "until": "202609271923"
   },
-  "start_date": "2026-09-27T14:13:12.264512+00:00",
-  "end_date": "2026-09-27T15:09:36.545308+00:00",
-  "duration_s": 3384.3,
+  "logical_date": "2026-09-27T11:23:00+00:00",
+  "cutoff_logged_by_task": "snapshot cutoff: 202609271923 SGT (from 2026-09-27T11:23:00+00:00)",
+  "start_date": "2026-09-27T20:06:00.368318+00:00",
+  "end_date": "2026-09-27T20:12:34.201693+00:00",
+  "duration_s": 393.8,
   "tasks": [
     {
       "task_id": "ingest_batch",
       "state": "success",
-      "start_date": "2026-09-27T14:22:37.496594+00:00",
-      "end_date": "2026-09-27T14:31:18.178284+00:00",
-      "duration_s": 520.7,
-      "attempts": 2,
-      "attempts_terminated_by_scheduler": 1
+      "start_date": "2026-09-27T20:06:00.754615+00:00",
+      "end_date": "2026-09-27T20:10:21.984515+00:00",
+      "duration_s": 261.2,
+      "attempts": 1,
+      "attempts_terminated_by_scheduler": 0
     },
     {
       "task_id": "ingest_speedbands",
       "state": "success",
-      "start_date": "2026-09-27T14:32:43.135858+00:00",
-      "end_date": "2026-09-27T14:35:32.904333+00:00",
-      "duration_s": 169.8,
+      "start_date": "2026-09-27T20:10:22.812815+00:00",
+      "end_date": "2026-09-27T20:11:00.346646+00:00",
+      "duration_s": 37.5,
       "attempts": 1,
       "attempts_terminated_by_scheduler": 0
     },
     {
       "task_id": "profile_bronze",
       "state": "success",
-      "start_date": "2026-09-27T14:35:37.077431+00:00",
-      "end_date": "2026-09-27T14:36:30.721209+00:00",
-      "duration_s": 53.6,
+      "start_date": "2026-09-27T20:11:01.456718+00:00",
+      "end_date": "2026-09-27T20:11:25.502121+00:00",
+      "duration_s": 24.0,
       "attempts": 1,
       "attempts_terminated_by_scheduler": 0
     },
     {
       "task_id": "dbt_build",
       "state": "success",
-      "start_date": "2026-09-27T14:50:27.210781+00:00",
-      "end_date": "2026-09-27T15:00:18.508749+00:00",
-      "duration_s": 591.3,
-      "attempts": 2,
-      "attempts_terminated_by_scheduler": 1
+      "start_date": "2026-09-27T20:11:26.144826+00:00",
+      "end_date": "2026-09-27T20:12:02.193568+00:00",
+      "duration_s": 36.0,
+      "attempts": 1,
+      "attempts_terminated_by_scheduler": 0
     },
     {
       "task_id": "quality_checks",
       "state": "success",
-      "start_date": "2026-09-27T15:01:43.917178+00:00",
-      "end_date": "2026-09-27T15:07:47.919875+00:00",
-      "duration_s": 364.0,
+      "start_date": "2026-09-27T20:12:03.258615+00:00",
+      "end_date": "2026-09-27T20:12:06.658177+00:00",
+      "duration_s": 3.4,
       "attempts": 1,
       "attempts_terminated_by_scheduler": 0
     },
     {
       "task_id": "publish_metrics",
       "state": "success",
-      "start_date": "2026-09-27T15:07:56.011965+00:00",
-      "end_date": "2026-09-27T15:09:35.585551+00:00",
-      "duration_s": 99.6,
+      "start_date": "2026-09-27T20:12:07.584643+00:00",
+      "end_date": "2026-09-27T20:12:33.407289+00:00",
+      "duration_s": 25.8,
       "attempts": 1,
       "attempts_terminated_by_scheduler": 0
     }

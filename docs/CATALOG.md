@@ -24,11 +24,14 @@ flowchart LR
   dim_snapshot[dim_snapshot] --> gold_congestion_episodes[gold_congestion_episodes]
   dim_snapshot[dim_snapshot] --> gold_link_hour_features[gold_link_hour_features]
   dim_snapshot[dim_snapshot] --> gold_link_speed_hourly[gold_link_speed_hourly]
+  stg_od[stg_od] --> dim_calendar[dim_calendar]
   stg_od[stg_od] --> gold_top_od_flows[gold_top_od_flows]
+  stg_speedband_obs[stg_speedband_obs] --> dim_calendar[dim_calendar]
   stg_speedband_obs[stg_speedband_obs] --> dim_snapshot[dim_snapshot]
   stg_speedband_obs[stg_speedband_obs] --> gold_congestion_episodes[gold_congestion_episodes]
   stg_speedband_obs[stg_speedband_obs] --> gold_link_hour_features[gold_link_hour_features]
   stg_speedband_obs[stg_speedband_obs] --> gold_link_speed_hourly[gold_link_speed_hourly]
+  stg_stop_pv[stg_stop_pv] --> dim_calendar[dim_calendar]
   stg_stop_pv[stg_stop_pv] --> gold_stop_demand_hourly[gold_stop_demand_hourly]
 ```
 
@@ -36,43 +39,43 @@ flowchart LR
 
 ### bronze.bus_routes
 
-Stop sequence of every service direction (BusRoutes endpoint), partitioned by pull date as_of=YYYYMMDD.
+Stop sequence of every service direction (BusRoutes endpoint), partitioned by pull date as_of (YYYYMMDD).
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False
 
 ### bronze.bus_services
 
-Bus services (BusServices endpoint), partitioned by pull date as_of=YYYYMMDD.
+Bus services (BusServices endpoint), partitioned by pull date as_of (YYYYMMDD).
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False
 
 ### bronze.bus_stops
 
-Bus stop master (BusStops endpoint), partitioned by pull date as_of=YYYYMMDD.
+Bus stop master (BusStops endpoint), partitioned by pull date as_of (YYYYMMDD).
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False
 
 ### bronze.pv_od
 
-Passenger Volume by Origin Destination Bus Stops: monthly trips per origin stop, destination stop, hour and day type. About 6 million rows a month. Partitioned by month=YYYY-MM.
+Passenger Volume by Origin Destination Bus Stops: monthly trips per origin stop, destination stop, hour and day type. About 6 million rows a month. Partitioned by month (YYYY-MM); a reload replaces its month in one commit.
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False, source_endpoint=ltaodataservice/PV/ODBus
 
 ### bronze.pv_stop
 
-Passenger Volume by Bus Stops: monthly tap-in and tap-out counts per stop, hour and day type, summed over all days of that type in the month. Partitioned by month=YYYY-MM.
+Passenger Volume by Bus Stops: monthly tap-in and tap-out counts per stop, hour and day type, summed over all days of that type in the month. Partitioned by month (YYYY-MM); a reload replaces its month in one commit.
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False, source_endpoint=ltaodataservice/PV/Bus
 
 ### bronze.speedband_links
 
-Link geometry and road metadata for the speed-band links, one pull (bronze/speedband_links/data.parquet).
+Link geometry and road metadata for the speed-band links, one pull, replaced as a whole on each load.
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False
 
 ### bronze.speedbands
 
-Traffic speed band of every road link in each sampled snapshot (DataMall Traffic Speed Bands v4). Written by the Kafka consumer or the file backfill, one object per snapshot at obs_date=YYYY-MM-DD/obs_hour=HH/snapshot=YYYYMMDDTHHMM.parquet. Unique on (snapshot_ts, link_id).
+Traffic speed band of every road link in each sampled snapshot (DataMall Traffic Speed Bands v4). Written by the Kafka consumer or the file backfill with a Delta MERGE that only inserts new (snapshot_ts, link_id) keys. Partitioned by obs_date, obs_hour (event time) and part (Kafka partition).
 
 Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Singapore Open Data Licence v1.0 (see docs/GOVERNANCE.md), contains_pii=False, source_endpoint=ltaodataservice/v4/TrafficSpeedBands
 
@@ -84,7 +87,11 @@ Meta: layer=bronze, provider=Land Transport Authority (LTA) DataMall, licence=Si
 | min_speed |  | Lower bound of the band, km/h. |  |
 | max_speed |  | Upper bound of the band, km/h (999 for band 8). |  |
 | _source |  | 'stream' (Kafka consumer) or 'file' (file backfill); the first writer of a key wins. |  |
-| _ingested_at |  | Wall-clock time the row was first written to bronze. |  |
+| _ingested_at |  | Wall-clock time (UTC) the row was first written to bronze. |  |
+| _late |  | True if the consumer saw the snapshot behind its watermark; NULL for rows from the file backfill. |  |
+| obs_date |  | Partition column, the date of snapshot_ts. |  |
+| obs_hour |  | Partition column, the hour of snapshot_ts. |  |
+| part |  | Partition column, the Kafka partition of the link (link_id % partitions). |  |
 
 ## Silver and gold models
 
@@ -105,7 +112,7 @@ Upstream: bronze.bus_services
 | origin_stop_code | VARCHAR |  |  |
 | destination_stop_code | VARCHAR |  |  |
 | am_peak_headway_min | VARCHAR |  |  |
-| as_of | BIGINT |  |  |
+| as_of | VARCHAR |  |  |
 
 Model-level tests: unique_combination
 
@@ -124,13 +131,15 @@ Upstream: bronze.bus_stops
 | lat | DOUBLE | Latitude (WGS84). One stop, Larkin Terminal, is in Johor Bahru. | in_range |
 | lon | DOUBLE | Longitude (WGS84). | in_range |
 | road_name | VARCHAR |  |  |
-| as_of | BIGINT |  |  |
+| as_of | VARCHAR |  |  |
 
 ### silver.dim_calendar
 
-Calendar for var calendar_start..calendar_end with the day type DataMall uses.
+Every day of the years the data covers, with the day type DataMall uses.
 
 Meta: layer=silver, owner=sg-traffic-lakehouse, contains_pii=False
+
+Upstream: stg_od, stg_speedband_obs, stg_stop_pv
 
 | Column | Type | Description | Tests |
 |---|---|---|---|
@@ -195,7 +204,7 @@ Upstream: dim_calendar, stg_speedband_obs
 | n_rows_known_band | BIGINT | Links reported with a band in 1-8. |  |
 | obs_date | DATE | Date of the snapshot (SGT). |  |
 | obs_hour | BIGINT | Hour of the snapshot (SGT). |  |
-| day_type | VARCHAR | WEEKDAY or WEEKENDS/HOLIDAY, using the MOM 2026 public holidays (seed public_holidays_sg_2026). | accepted_values, not_null |
+| day_type | VARCHAR | WEEKDAY or WEEKENDS/HOLIDAY, using the MOM public holidays in seed public_holidays_sg. | accepted_values, not_null |
 
 ### silver.fct_bus_route_stop
 
@@ -212,7 +221,7 @@ Upstream: bronze.bus_routes
 | direction | TINYINT |  |  |
 | stop_sequence | SMALLINT |  |  |
 | distance_km | DOUBLE |  |  |
-| as_of | BIGINT |  |  |
+| as_of | VARCHAR |  |  |
 
 Model-level tests: unique_combination
 
@@ -363,9 +372,11 @@ Upstream: bronze.speedbands
 | is_band_unknown | BOOLEAN | True when the published band was outside 1-8. | not_null |
 | speed_lower_kmh | SMALLINT | Lower bound of the band, km/h. | in_range |
 | speed_upper_kmh | SMALLINT | Upper bound of the band, km/h; NULL for band 8 (the feed's 999 means open-ended). | in_range |
-| partition_date | DATE | obs_date from the bronze object path; must equal the date of snapshot_ts (singular test). |  |
-| partition_hour | BIGINT | obs_hour from the bronze object path; must equal the hour of snapshot_ts (singular test). |  |
-| ingest_source | VARCHAR | 'stream' or 'file'. | accepted_values |
+| partition_date | DATE | obs_date partition value in bronze; must equal the date of snapshot_ts (singular test). |  |
+| partition_hour | SMALLINT | obs_hour partition value in bronze; must equal the hour of snapshot_ts (singular test). |  |
+| ingest_source | VARCHAR | 'stream' (Kafka consumer) or 'file' (file backfill): the writer whose copy was kept. | accepted_values |
+| ingested_at_utc | TIMESTAMP | When the kept copy was written to bronze (UTC). | not_null |
+| arrived_late | BOOLEAN | True if the consumer saw the snapshot behind its watermark; NULL when the file backfill wrote it. |  |
 
 Model-level tests: unique_combination
 
@@ -391,4 +402,6 @@ Model-level tests: unique_combination
 ## Singular tests
 
 - `assert_bronze_partition_matches_event_time`
-- `assert_episodes_do_not_overlap`
+- `assert_calendar_years_have_holidays`
+- `assert_episodes_stay_in_one_sampling_run`
+- `assert_gold_keeps_every_silver_row`

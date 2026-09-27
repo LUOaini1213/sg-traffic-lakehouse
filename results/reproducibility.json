@@ -3,8 +3,8 @@
   "identical_files": true,
   "identical_content": true,
   "run_seconds": {
-    "a": 93.6,
-    "b": 108.7
+    "a": 238.3,
+    "b": 285.1
   },
   "tables": {
     "gold_link_speed_hourly": {

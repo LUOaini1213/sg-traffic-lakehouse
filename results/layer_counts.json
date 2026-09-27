@@ -31,6 +31,10 @@
     "_quarantine": {
       "files": 4,
       "rows": 14
+    },
+    "_dead_letter": {
+      "files": 0,
+      "rows": 0
     }
   },
   "silver": {

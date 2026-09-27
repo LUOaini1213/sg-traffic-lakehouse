@@ -101,7 +101,11 @@ def duckdb_connect(settings: Settings, database: str | Path = ":memory:", read_o
     con.execute(f"SET threads={int(settings.duckdb_threads)}")
     con.execute(f"SET temp_directory='{tempfile.gettempdir()}/duckdb_spill'")
     if settings.is_s3:
-        con.execute("LOAD httpfs")
+        try:
+            con.execute("LOAD httpfs")
+        except duckdb.IOException:  # not cached yet (fresh machine or CI runner): fetch it once
+            con.execute("INSTALL httpfs")
+            con.execute("LOAD httpfs")
         q = lambda v: "'" + str(v).replace("'", "''") + "'"  # noqa: E731  (CREATE SECRET takes no parameters)
         con.execute(
             f"CREATE OR REPLACE SECRET lake (TYPE s3, KEY_ID {q(settings.s3_key)}, SECRET {q(settings.s3_secret)}, "

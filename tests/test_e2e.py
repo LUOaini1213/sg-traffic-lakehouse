@@ -3,6 +3,7 @@
 Expected values are worked out by hand from tests/make_fixture.py.
 """
 import datetime as dt
+import hashlib
 import json
 
 import duckdb
@@ -43,8 +44,12 @@ def test_dbt_build_ran_all_tests(run):
     assert len(tests) >= 60
     assert status.get("error", 0) == 0 and status.get("fail", 0) == 0
     warned = sorted(r["unique_id"].split(".")[2] for r in rr["results"] if r["status"] == "warn")
-    # link 999 (not in the metadata) and stop 99999 (not in the stop list) are known fixture defects
-    assert len(warned) == 3 and all(w.startswith("relationships_") for w in warned)
+    # link 999 (not in the metadata) and stop 99999 (not in the stop list) are known fixture defects; the fixture
+    # has a January 2027 file and the holiday seed has no 2027 list
+    assert len(warned) == 4 and sum(w.startswith("relationships_") for w in warned) == 3
+    assert "assert_calendar_years_have_holidays" in warned
+    passed = {r["unique_id"].split(".")[2] for r in rr["results"] if r["status"] == "pass"}
+    assert {"assert_gold_keeps_every_silver_row", "assert_episodes_stay_in_one_sampling_run"} <= passed
 
 
 def test_congestion_episodes(con):
@@ -62,6 +67,23 @@ def test_snapshot_dimension(con):
     assert [r[1] for r in got] == [1, 1, 1, 1, 1, 2, 2, 2, 2, 3]
     assert got[5][2] == 100.0 and got[9][2] == 2635.0
     assert got[9][3] == "WEEKDAY" and got[0][3] == "WEEKENDS/HOLIDAY"
+
+
+def test_planted_bronze_duplicate_is_removed_in_silver_first_copy_wins(con, run):
+    from conftest import PLANTED
+    prof = results(run, "profile_bronze.json")
+    assert {d["dataset"]: d["duplicate_keys"] for d in prof["datasets"]}["speedbands"] == 1
+    got = q(con, "select speed_band, ingest_source from silver.stg_speedband_obs "
+                 f"where link_id = {PLANTED['link_id']} and snapshot_ts = '{PLANTED['snapshot_ts']}'")
+    assert got == [(2, "file")]
+    assert q(con, "select count(*), count(distinct (snapshot_ts, link_id)) from silver.stg_speedband_obs") == [(120, 120)]
+
+
+def test_calendar_is_derived_from_the_data(con):
+    got = q(con, "select min(cal_date), max(cal_date), count(*) from silver.dim_calendar")
+    assert got == [(dt.date(2026, 1, 1), dt.date(2027, 12, 31), 730)]
+    assert q(con, "select day_type, n_days from silver.dim_month_day_counts where year_month = '2027-01' "
+                  "order by 1") == [("WEEKDAY", 21), ("WEEKENDS/HOLIDAY", 10)]
 
 
 def test_band_zero_is_null_in_silver(con):
@@ -109,6 +131,8 @@ def test_stop_demand_uses_day_counts(con):
         ("2026-08", "WEEKDAY", 7, "01012", 20, 100.0, 5.0),
         ("2026-08", "WEEKDAY", 8, "01012", 20, 200.0, 15.0),
         ("2026-08", "WEEKENDS/HOLIDAY", 8, "01012", 11, 100.0, 5.0),
+        ("2027-01", "WEEKDAY", 8, "01012", 21, 100.0, 10.0),          # a 2027 file reaches gold
+        ("2027-01", "WEEKENDS/HOLIDAY", 8, "01012", 10, 50.0, 5.0),
     ]
 
 
@@ -131,9 +155,12 @@ def test_quality_findings(run):
     assert checks["unknown_link_ids"]["details"]["link_ids"] == [999]
     assert checks["unknown_band_share"]["details"]["rows"] == 1
     assert (checks["sampler_log_consistency"]["value"], checks["sampler_log_consistency"]["threshold"]) == (9, 10)
+    assert checks["sampler_log_consistency"]["status"] == "INFO"
     assert checks["od_vs_tapin"]["status"] == "PASS" and checks["od_vs_tapin"]["value"] == 0.0
     assert checks["pv_stops_missing_from_master"]["details"] == {"stops": 1, "tap_ins": 20}
-    assert checks["quarantine_share"]["details"]["rows_quarantined"] == 6
+    qd = checks["quarantine_share"]["details"]
+    assert qd["rows_quarantined"] == 11  # pv_stop 8, pv_od 1, speed bands 2
+    assert qd["reasons"]["pv_stop: malformed_row"] == 2 and qd["reasons"]["speedbands: malformed_row"] == 1
 
 
 def test_quality_thresholds_move_the_verdicts(run, tmp_path, monkeypatch):
@@ -160,22 +187,25 @@ def test_strict_quality_fails_on_error_checks(run, tmp_path):
 
 def test_profile_reconciles(run):
     prof = results(run, "profile_bronze.json")
-    assert prof["all_reconciled"] and len(prof["reconciliation"]) == 3
+    assert prof["all_reconciled"] and len(prof["reconciliation"]) == 5  # 3 stop files, 1 OD file, links
+    assert len(prof["speedband_reconciliation"]) == 10 and all(r["match"] for r in prof["speedband_reconciliation"])
     by = {d["dataset"]: d for d in prof["datasets"]}
-    assert by["speedbands"]["rows"] == 120 and by["speedbands"]["duplicate_keys"] == 0
-    assert by["pv_stop"]["rows"] == 8 and by["pv_od"]["rows"] == 9
+    assert by["speedbands"]["rows"] == 121  # 120 + the planted duplicate
+    assert by["pv_stop"]["rows"] == 10 and by["pv_od"]["rows"] == 9
+    rec = {r["file"]: r for r in prof["reconciliation"]}["transport_node_bus_202608.csv"]
+    assert (rec["source_rows"], rec["bronze_rows"], rec["quarantined_rows"]) == (14, 6, 8)
 
 
 def test_publish_counts_and_gold_files(run):
     counts = results(run, "layer_counts.json")
-    assert counts["bronze"]["speedbands"] == {"files": 30, "rows": 120}
-    assert counts["bronze"]["_quarantine"]["rows"] == 6
+    assert counts["bronze"]["speedbands"] == {"files": 31, "rows": 121}
+    assert counts["bronze"]["_quarantine"]["rows"] == 11
     assert counts["gold"]["gold_congestion_episodes"] == 3
     manifest = results(run, "gold_manifest.json")
     lake = Lake(run)
     for t, m in manifest.items():
-        assert lake.num_rows(m["path"]) == m["rows"] == counts["gold"][t]
-        assert lake.sha256(m["path"]) == m["file_sha256"]
+        assert lake.delta_stats(m["path"])["rows"] == m["rows"] == counts["gold"][t]
+        assert hashlib.sha256("".join(lake.delta_file_hashes(m["path"])).encode()).hexdigest() == m["file_sha256"]
 
 
 def test_report_written(run):

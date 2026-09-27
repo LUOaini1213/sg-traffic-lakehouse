@@ -15,16 +15,18 @@ vars:
   congestion_band_max: 2
   congestion_min_snapshots: 3
   congestion_road_categories: [1, 2, 3]
-  # A gap between snapshots longer than this starts a new sampling run; episodes never span a gap.
-  max_gap_minutes: 40
+  # A gap between snapshots longer than this starts a new sampling run; episodes never span a gap. The sampler
+  # fetches every 15-22 minutes, so a longer gap means at least one fetch is missing. Same value as
+  # cadence_gap.max_gap_minutes in config/quality_thresholds.yml (tests/test_quality.py checks they agree).
+  max_gap_minutes: 30
   top_od_n: 50
-  calendar_start: "2026-01-01"
-  calendar_end: "2026-12-31"
+  # The calendar (dim_calendar) spans whole years from the earliest to the latest date in the data; there are no
+  # calendar vars to keep in step with the data.
 
 seeds:
   sg_traffic:
     +schema: ref
-    public_holidays_sg_2026:
+    public_holidays_sg:
       +column_types: {holiday_date: date, holiday_name: varchar}
     speed_band_ref:
       +column_types: {speed_band: smallint, min_kmh: smallint, max_kmh: smallint, label: varchar}

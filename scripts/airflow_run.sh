@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Start Airflow (standalone) next to MinIO, trigger the DAG with a logical date equal to the snapshot cutoff (the
-# DAG takes its cutoff from data_interval_end, which for a manual run is the logical date), wait for the run to
+# DAG takes a manual run's cutoff from its logical date, a scheduled run's from data_interval_end), wait for the run to
 # finish and save its task states and durations to results/airflow/dag_run.json. Log lines of any attempt the
 # scheduler terminated are kept in results/airflow/terminated_attempts.log.
 # Usage: bash scripts/airflow_run.sh YYYYmmddHHMM   (cutoff in Singapore time)
@@ -10,7 +10,7 @@ UNTIL=${1:-}
 DAG=sg_traffic_lakehouse
 docker compose up -d minio   # the DAG needs only object storage
 docker compose --profile airflow up -d airflow
-af() { docker compose exec -T airflow airflow "$@" 2>/dev/null; }
+af() { docker compose exec -T airflow airflow "$@" 2>/dev/null </dev/null; }
 json() { python3 -c "import sys; t=sys.stdin.read(); i=min([x for x in (t.find('['), t.find('{')) if x >= 0]); print(t[i:])"; }
 
 echo "waiting for the DAG to be parsed..."
@@ -37,10 +37,10 @@ mkdir -p results/airflow
 af tasks states-for-dag-run $DAG "$RUN_ID" -o json | json > results/airflow/.tasks.json
 af dags list-runs $DAG -o json | json > results/airflow/.runs.json
 # attempts per task = number of attempt=N.log files Airflow wrote for it
-docker compose exec -T airflow bash -c "cd '/opt/airflow/logs/dag_id=$DAG/run_id=$RUN_ID' && for d in task_id=*; do echo \${d#task_id=} \$(ls \$d | grep -c '^attempt=') \$(grep -l \"shouldn't be running anymore\" \$d/attempt=*.log 2>/dev/null | wc -l); done"   > results/airflow/.attempts.txt
+docker compose exec -T airflow bash -c "cd '/opt/airflow/logs/dag_id=$DAG/run_id=$RUN_ID' && for d in task_id=*; do echo \${d#task_id=} \$(ls \$d | grep -c '^attempt=') \$(grep -l \"shouldn't be running anymore\" \$d/attempt=*.log 2>/dev/null | wc -l); done" < /dev/null > results/airflow/.attempts.txt
 L="/opt/airflow/logs/dag_id=$DAG/run_id=$RUN_ID"
-docker compose exec -T airflow bash -c "grep -h 'snapshot cutoff:' '$L'/task_id=ingest_speedbands/attempt=*.log | tail -1" > results/airflow/.cutoff.txt || true
-docker compose exec -T airflow bash -c "for f in \$(grep -l \"shouldn't be running anymore\" '$L'/task_id=*/attempt=*.log 2>/dev/null); do echo \"== \$f\"; grep -iE \"shouldn't be running|heartbeat|zombie|terminat|SIGTERM|killed|memory\" \$f | tail -20; done" > results/airflow/terminated_attempts.log || true
+docker compose exec -T airflow bash -c "grep -h 'snapshot cutoff:' '$L'/task_id=ingest_speedbands/attempt=*.log | tail -1" < /dev/null > results/airflow/.cutoff.txt || true
+docker compose exec -T airflow bash -c "for f in \$(grep -l \"shouldn't be running anymore\" '$L'/task_id=*/attempt=*.log 2>/dev/null); do echo \"== \$f\"; grep -iE \"shouldn't be running|heartbeat|zombie|terminat|SIGTERM|killed|memory\" \$f | tail -20; done" < /dev/null > results/airflow/terminated_attempts.log || true
 [ -s results/airflow/terminated_attempts.log ] || rm -f results/airflow/terminated_attempts.log
 python3 - "$RUN_ID" "$UNTIL" <<'PY'
 import datetime as dt, json, sys
@@ -55,8 +55,8 @@ def secs(a, b):
         return None
 cut = open("results/airflow/.cutoff.txt").read().strip()
 out = {"dag_id": run["dag_id"], "run_id": run_id, "state": run["state"], "conf": {"until": until},
-       "logical_date": run.get("logical_date"), "data_interval_end": run.get("data_interval_end"),
-       "cutoff_logged_by_task": cut[cut.find("snapshot cutoff:"):] if "snapshot cutoff:" in cut else None,
+       "logical_date": run.get("logical_date"),
+       "cutoff_logged_by_task": cut[cut.find("snapshot cutoff:"):].split('"')[0] if "snapshot cutoff:" in cut else None,
        "start_date": run.get("start_date"), "end_date": run.get("end_date"),
        "duration_s": secs(run.get("start_date"), run.get("end_date")),
        "tasks": [{"task_id": t["task_id"], "state": t["state"], "start_date": t.get("start_date"),

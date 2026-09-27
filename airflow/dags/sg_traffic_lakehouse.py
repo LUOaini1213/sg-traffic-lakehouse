@@ -6,9 +6,11 @@ the Kafka consumer; the ingest_speedbands task backfills any snapshot the stream
 MERGE that only inserts new keys, so the backfill never duplicates or overwrites what the consumer wrote, even when
 both run at the same time.
 
-Snapshot cutoff: the run's data_interval_end (for a manual run without a schedule, its logical date), converted to
-Singapore time by the CLI. A run therefore always sees the same set of snapshot files, however late it starts, and
-a re-run of the same interval sees the same input. There is no free-text parameter.
+Snapshot cutoff: for a scheduled run, its data_interval_end, converted to Singapore time by the CLI, so a run always
+sees the same set of snapshot files however late it starts, and a re-run of the same interval sees the same input.
+There is no free-text parameter. A manual run uses its logical date instead: in Airflow 3 the data interval of a
+manual run ends at the moment it was triggered (observed here: the first version of this DAG used it and took every
+file up to the trigger time). scripts/airflow_run.sh triggers with a logical date equal to the cutoff.
 
 Retries: ingest, dbt and publish retry once (they are idempotent). The strict quality gate does not retry: its
 result depends only on the data, so a retry would just repeat the failure and delay the alert.
@@ -25,7 +27,8 @@ from airflow.sdk import DAG
 
 PY = os.environ.get("PIPELINE_PYTHON", "python")
 CLI = f"cd /opt/project && {PY} -m lakehouse"
-CUTOFF = "--cutoff-utc {{ (data_interval_end or dag_run.run_after).isoformat() }}"
+CUTOFF = ("--cutoff-utc {{ (logical_date if dag_run.run_type == 'manual' and logical_date "
+          "else data_interval_end).isoformat() }}")
 
 with DAG(
     dag_id="sg_traffic_lakehouse",

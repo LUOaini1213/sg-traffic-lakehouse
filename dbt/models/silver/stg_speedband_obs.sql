@@ -1,5 +1,6 @@
--- One row per (snapshot, link). Bronze is already unique per key (merge-on-write); the row_number keeps silver
--- correct even if two bronze objects ever held the same snapshot.
+-- One row per (snapshot, link). The bronze MERGE only inserts new keys, so bronze should already be unique; the
+-- row_number keeps silver correct if a key is ever stored twice (for example a raw append that bypassed the MERGE):
+-- the copy written first wins, as in bronze.
 with src as (
     select * from {{ source('bronze', 'speedbands') }}
 ),
@@ -20,6 +21,8 @@ select
     case when max_speed = 999 then null else max_speed end as speed_upper_kmh,
     obs_date as partition_date,
     obs_hour as partition_hour,
-    _source as ingest_source
+    _source as ingest_source,
+    _ingested_at as ingested_at_utc,
+    _late as arrived_late
 from ranked
 where rn = 1

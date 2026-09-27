@@ -7,8 +7,9 @@ import pyarrow as pa
 import pytest
 
 from lakehouse.messages import partition_for
-from lakehouse.speedbands import (BronzeSpeedbandWriter, SchemaDriftError, dedupe, discover_snapshots,
-                                  parse_snapshot_name, partition_path, read_snapshot, split_by_partition)
+from lakehouse.speedbands import (QUARANTINE, TABLE, BronzeSpeedbandWriter, SchemaDriftError, dedupe,
+                                  dedupe_counting, discover_snapshots, load_files, parse_snapshot,
+                                  parse_snapshot_name, read_snapshot, split_by_partition, write_quarantine)
 from lakehouse.storage import Lake
 
 from conftest import FIXTURE
@@ -26,6 +27,11 @@ def rows(ts, links, bands):
     })
 
 
+def stored(lake):
+    t = lake.delta(TABLE)
+    return [] if t is None else sorted(t.to_pyarrow_table().to_pylist(), key=lambda r: (r["snapshot_ts"], r["link_id"]))
+
+
 def test_parse_snapshot_name():
     assert parse_snapshot_name("sb_20260926_1928.csv.gz") == dt.datetime(2026, 9, 26, 19, 28)
     for bad in ["sb_20260926_1928.csv", "sb_2026092_1928.csv.gz", "speedband_links.csv", "sb_20260926_19281.csv.gz"]:
@@ -33,11 +39,14 @@ def test_parse_snapshot_name():
             parse_snapshot_name(bad)
 
 
-def test_partition_path_uses_event_time():
-    assert partition_path(dt.datetime(2026, 9, 26, 23, 58), 0) == \
-        "bronze/speedbands/obs_date=2026-09-26/obs_hour=23/snapshot=20260926T2358-p0.parquet"
-    assert partition_path(dt.datetime(2026, 9, 27, 0, 5), 2) == \
-        "bronze/speedbands/obs_date=2026-09-27/obs_hour=00/snapshot=20260927T0005-p2.parquet"
+def test_bronze_partitions_use_event_time(settings):
+    lake = Lake(settings)
+    w = BronzeSpeedbandWriter(lake)
+    late_evening, after_midnight = dt.datetime(2026, 9, 26, 23, 58), dt.datetime(2026, 9, 27, 0, 5)
+    w.upsert(late_evening, rows(late_evening, [3], [4]), "stream", 0, 3)
+    w.upsert(after_midnight, rows(after_midnight, [5], [4]), "stream", 2, 3)
+    got = {(r["obs_date"], r["obs_hour"], r["part"]) for r in stored(lake)}
+    assert got == {(dt.date(2026, 9, 26), 23, 0), (dt.date(2026, 9, 27), 0, 2)}
 
 
 def _write_gz(path, text, truncate=False):
@@ -89,11 +98,54 @@ def test_read_snapshot_rejects_schema_drift(tmp_path):
         read_snapshot(p)
 
 
+def test_bad_rows_are_quarantined_not_fatal(tmp_path):
+    """One bad line used to stop the whole file. Now every rule sends its row to the rejects, and the rest load."""
+    p = tmp_path / "sb_20260926_2010.csv.gz"
+    _write_gz(p, "LinkID,SpeedBand,MinimumSpeed,MaximumSpeed\n"
+                 "1,3,20,29\n"          # valid
+                 "2,x,20,29\n"          # band not a number
+                 "3,0,,\n"              # band 0 with empty bounds: valid, as DataMall publishes it
+                 "4,3,20,29,extra\n"    # extra field
+                 "5,3,20.5,29\n"        # decimal bound
+                 "6,99999,1,2\n"        # band out of SMALLINT range
+                 ",3,1,2\n"             # no link id
+                 "7,2,10,19\n")         # valid
+    ps = parse_snapshot(p)
+    assert ps.table["link_id"].to_pylist() == [1, 3, 7]
+    assert ps.source_rows == 8 == ps.table.num_rows + ps.rejects.num_rows
+    assert ps.reasons == {"malformed_row": 1, "missing_or_uncastable_link_id": 1,
+                          "missing_or_uncastable_speed_band": 2, "uncastable_min_speed": 1}
+    malformed = [r for r in ps.rejects.to_pylist() if r["_reject"] == "malformed_row"]
+    assert malformed[0]["_raw_line"] == "4,3,20,29,extra"
+
+
+def test_fixture_snapshot_with_bad_lines():
+    ps = parse_snapshot(FIXTURE / "speedbands" / "sb_20260905_0900.csv.gz")
+    assert (ps.source_rows, ps.table.num_rows, ps.rejects.num_rows) == (14, 12, 2)
+
+
+def test_quarantine_is_replaced_per_snapshot(settings, tmp_path):
+    lake = Lake(settings)
+    p = tmp_path / "sb_20260926_2010.csv.gz"
+    _write_gz(p, "LinkID,SpeedBand,MinimumSpeed,MaximumSpeed\n1,3,20,29\n2,x,20,29\n")
+    write_quarantine(lake, parse_snapshot(p))
+    assert lake.delta_stats(QUARANTINE)["rows"] == 1
+    _write_gz(p, "LinkID,SpeedBand,MinimumSpeed,MaximumSpeed\n1,3,20,29\n2,3,20,29\n")  # fixed upstream
+    write_quarantine(lake, parse_snapshot(p))
+    assert lake.delta_stats(QUARANTINE)["rows"] == 0
+
+
 def test_dedupe_keeps_first_and_sorts():
     t = pa.concat_tables([rows(T0, [3, 1, 2], [4, 4, 4]), rows(T0, [1, 3], [7, 7])])
     d = dedupe(t)
     assert d["link_id"].to_pylist() == [1, 2, 3]
     assert d["speed_band"].to_pylist() == [4, 4, 4]
+
+
+def test_dedupe_counts_only_repeats_with_a_different_payload():
+    t = pa.concat_tables([rows(T0, [1, 2, 3], [4, 4, 0]), rows(T0, [1, 2, 3], [4, 7, 0])])
+    d, conflicts = dedupe_counting(t)
+    assert d.num_rows == 3 and conflicts == 1  # link 2 differs; link 1 and link 3 (NULL bounds) repeat exactly
 
 
 def test_dedupe_is_per_snapshot():
@@ -104,35 +156,32 @@ def test_dedupe_is_per_snapshot():
 
 def test_upsert_is_idempotent(settings):
     lake = Lake(settings)
-    w = BronzeSpeedbandWriter(lake, clock=lambda: dt.datetime(2026, 9, 27, 12, 0))
+    w = BronzeSpeedbandWriter(lake, clock=lambda: dt.datetime(2026, 9, 27, 4, 0))
     r1 = w.upsert(T0, rows(T0, [1, 2, 3], [2, 3, 4]), "stream", 0, 1)
-    h1 = lake.sha256(r1.path)
+    v1 = lake.delta_stats(TABLE)["version"]
     r2 = w.upsert(T0, rows(T0, [1, 2, 3], [2, 3, 4]), "file", 0, 1)
-    assert (r1.rows_new, r2.rows_new, r2.rows_after, r2.written) == (3, 0, 3, False)
-    assert lake.sha256(r1.path) == h1
-    stored = lake.read_parquet(r1.path).to_pylist()
-    assert {r["_source"] for r in stored} == {"stream"}
+    assert (r1.rows_new, r2.rows_new, r2.rows_after, r2.written, r2.collisions_payload_differs) == (3, 0, 3, False, 0)
+    assert lake.delta_stats(TABLE)["version"] == v1  # nothing committed
+    assert {r["_source"] for r in stored(lake)} == {"stream"}
 
 
-def test_upsert_merges_partial_redelivery(settings):
+def test_upsert_merges_partial_redelivery_first_writer_wins(settings):
     lake = Lake(settings)
     w = BronzeSpeedbandWriter(lake)
     w.upsert(T0, rows(T0, [1, 2], [2, 3]), "stream", 0, 1)
     r = w.upsert(T0, rows(T0, [2, 3, 4], [9, 4, 5]), "stream", 0, 1)
-    assert (r.rows_existing, r.rows_new, r.rows_after) == (2, 2, 4)
-    got = {x["link_id"]: x["speed_band"] for x in lake.read_parquet(r.path).to_pylist()}
-    assert got == {1: 2, 2: 3, 3: 4, 4: 5}  # the first stored value of link 2 wins
+    assert (r.rows_existing, r.rows_new, r.rows_after, r.collisions_payload_differs) == (2, 2, 4, 1)
+    assert {x["link_id"]: x["speed_band"] for x in stored(lake)} == {1: 2, 2: 3, 3: 4, 4: 5}
 
 
 def test_upsert_late_snapshot_goes_to_its_own_partition(settings):
     lake = Lake(settings)
     w = BronzeSpeedbandWriter(lake)
     later, earlier = T0 + dt.timedelta(hours=3), T0
-    w.upsert(later, rows(later, [1], [5]), "stream", 0, 1)
-    w.upsert(earlier, rows(earlier, [1], [2]), "stream", 0, 1)  # arrives after a later snapshot
-    files = lake.list_files("bronze/speedbands")
-    assert files == [partition_path(earlier, 0), partition_path(later, 0)]
-    assert lake.read_parquet(partition_path(earlier, 0))["speed_band"].to_pylist() == [2]
+    w.upsert(later, rows(later, [1], [5]), "stream", 0, 1, late=False)
+    w.upsert(earlier, rows(earlier, [1], [2]), "stream", 0, 1, late=True)  # arrives after a later snapshot
+    got = [(r["snapshot_ts"], r["obs_hour"], r["speed_band"], r["_late"]) for r in stored(lake)]
+    assert got == [(earlier, 8, 2, True), (later, 11, 5, False)]
 
 
 def test_upsert_rejects_rows_of_another_snapshot(settings):
@@ -154,3 +203,45 @@ def test_upsert_rejects_rows_of_another_partition(settings):
     with pytest.raises(ValueError):
         w.upsert(T0, rows(T0, [1, 2], [3, 3]), "stream", 1, 3)  # link 2 belongs to partition 2
     assert w.upsert(T0, rows(T0, [1, 4], [3, 3]), "stream", 1, 3).rows_new == 2
+
+
+@pytest.mark.parametrize("first", ["consumer", "backfill"])
+def test_concurrent_writers_lose_nothing(settings, first):
+    """The reviewer's reproduction: the file backfill (4 rows) and a consumer flush (1 row) write the same slice.
+    One writer reads the slice, the other commits, then the first commits on its stale read. With read-merge-write
+    of one Parquet object the last writer overwrote the other (bronze kept 1 of 4 rows). With a Delta MERGE the
+    stale commit is rejected, retried on the new version, and bronze holds all 4 rows once each."""
+    lake = Lake(settings)
+    consumer, backfill = BronzeSpeedbandWriter(lake), BronzeSpeedbandWriter(lake)
+    stream_rows, file_rows = rows(T0, [1], [2]), rows(T0, [1, 4, 7, 10], [2, 3, 4, 5])
+    slow, fast = (consumer, backfill) if first == "consumer" else (backfill, consumer)
+    slow_rows, fast_rows = (stream_rows, file_rows) if first == "consumer" else (file_rows, stream_rows)
+    fired = []
+
+    def interleave(ts, part):
+        if not fired:
+            fired.append(1)
+            fast.upsert(T0, fast_rows, "file" if fast is backfill else "stream", 1, 3)
+
+    slow.before_commit = interleave
+    res = slow.upsert(T0, slow_rows, "stream" if slow is consumer else "file", 1, 3)
+    got = stored(lake)
+    assert fired and res.retries == 1
+    assert sorted(r["link_id"] for r in got) == [1, 4, 7, 10]
+    assert res.rows_after == 4
+
+
+def test_backfill_twice_changes_nothing_and_counts_repeats(settings):
+    lake = Lake(settings)
+    first = load_files(settings, lake, log=lambda *_: None)
+    v = lake.delta_stats(TABLE)["version"]
+    again = load_files(settings, lake, log=lambda *_: None)
+    assert sum(x["rows_new_in_bronze"] for x in first["snapshots"]) == 120
+    assert sum(x["rows_new_in_bronze"] for x in again["snapshots"]) == 0
+    assert lake.delta_stats(TABLE)["version"] == v
+    by = {x["file"]: x for x in first["snapshots"]}
+    assert by["sb_20260905_0920.csv.gz"]["duplicate_rows_in_file"] == 1
+    assert by["sb_20260905_0920.csv.gz"]["collisions_payload_differs"] == 1
+    assert by["sb_20260905_0900.csv.gz"]["rows_quarantined"] == 2
+    assert {r["speed_band"] for r in stored(lake) if r["link_id"] == 104 and r["snapshot_ts"].hour == 9
+            and r["snapshot_ts"].minute == 20} == {6}

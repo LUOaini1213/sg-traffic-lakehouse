@@ -40,15 +40,20 @@ models:
           - in_range:
               arguments: {min_value: 9, max_value: 69}
       - name: partition_date
-        description: obs_date from the bronze object path; must equal the date of snapshot_ts (singular test).
+        description: obs_date partition value in bronze; must equal the date of snapshot_ts (singular test).
       - name: partition_hour
-        description: obs_hour from the bronze object path; must equal the hour of snapshot_ts (singular test).
+        description: obs_hour partition value in bronze; must equal the hour of snapshot_ts (singular test).
       - name: ingest_source
-        description: "'stream' or 'file'."
+        description: "'stream' (Kafka consumer) or 'file' (file backfill): the writer whose copy was kept."
         tests:
           - accepted_values:
               arguments:
                 values: ['stream', 'file']
+      - name: ingested_at_utc
+        description: When the kept copy was written to bronze (UTC).
+        tests: [not_null]
+      - name: arrived_late
+        description: True if the consumer saw the snapshot behind its watermark; NULL when the file backfill wrote it.
 
   - name: dim_snapshot
     description: One row per snapshot, with its sequence number, the gap since the previous snapshot and its sampling run.
@@ -78,7 +83,7 @@ models:
       - name: obs_hour
         description: Hour of the snapshot (SGT).
       - name: day_type
-        description: WEEKDAY or WEEKENDS/HOLIDAY, using the MOM 2026 public holidays (seed public_holidays_sg_2026).
+        description: WEEKDAY or WEEKENDS/HOLIDAY, using the MOM public holidays in seed public_holidays_sg.
         tests:
           - not_null
           - accepted_values:
@@ -123,7 +128,7 @@ models:
               arguments: {min_value: 0, max_value: 20000}
 
   - name: dim_calendar
-    description: Calendar for var calendar_start..calendar_end with the day type DataMall uses.
+    description: Every day of the years the data covers, with the day type DataMall uses.
     columns:
       - name: cal_date
         description: Date.

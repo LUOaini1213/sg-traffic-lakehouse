@@ -9,8 +9,13 @@ the tests check for:
   - congestion episodes: link 101 08:00-09:00 (4 snapshots), link 111 08:20-09:00 (exactly 3), link 105
     11:00-12:00 (4); link 103 has 2 + 2 congested snapshots split by the gap (no episode); link 109 is always
     band 1 but is a small road (no episode);
-  - passenger-volume files with one bad row per quarantine rule, a stop missing from the stop list, and OD totals
-    that reconcile exactly with tap-ins; two OD flows tie on trips (tie broken by stop code).
+  - snapshot 09:00 has a line with an extra field and a line with a non-numeric band (both quarantined);
+    snapshot 09:20 repeats link 104 with a different band (the first copy wins, the collision is counted);
+  - passenger-volume files with one bad row per quarantine rule, a line with an extra field, a line with missing
+    fields, a decimal volume (TRY_CAST alone would round it), a stop missing from the stop list, and OD totals
+    that reconcile exactly with tap-ins; two OD flows tie on trips (tie broken by stop code);
+  - a January 2027 volume file: the calendar must extend to 2027 without being told (there is no 2027 holiday
+    list, which dbt reports as a warning).
 Run: python tests/make_fixture.py
 """
 from __future__ import annotations
@@ -45,6 +50,10 @@ LINKS = {
     112: (3, [5, 5, 5, 5, 5, 5, None, 5, 5, 5]),
 }
 UNKNOWN_LINK = (999, 2, 3)  # (link, snapshot index, band)
+# raw lines appended to a snapshot: (snapshot index, line)
+EXTRA_LINES = [(3, "113,3,20,29,9"),      # extra field -> malformed_row
+               (3, "114,x,20,29"),        # band not a number -> missing_or_uncastable_speed_band
+               (4, "104,5,40,49")]        # link 104 again with a different band: the first copy (band 6) wins
 
 
 def band_bounds(b: int):
@@ -67,6 +76,9 @@ def write_snapshots():
                 w.writerow([link, bands[i], *band_bounds(bands[i])])
         if i == UNKNOWN_LINK[1]:
             w.writerow([UNKNOWN_LINK[0], UNKNOWN_LINK[2], *band_bounds(UNKNOWN_LINK[2])])
+        for j, line in EXTRA_LINES:
+            if j == i:
+                buf.write(line + "\n")
         # mtime=0 in the gzip header so regenerating the fixture gives identical bytes
         with open(d / f"sb_{ts:%Y%m%d_%H%M}.csv.gz", "wb") as raw, \
                 gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, filename="") as z:
@@ -103,6 +115,13 @@ PV = {
         ["2026-08", "WEEKDAY", "x7", "BUS", "01012", 5, 5],      # uncastable hour
         ["2026-08", "WEEKDAY", 10, "BUS", "1012", 5, 5],         # bad stop code (lost leading zero)
         ["2026-07", "WEEKDAY", 10, "BUS", "01012", 5, 5],        # month does not match the file
+        ["2026-08", "WEEKDAY", 8, "BUS", "01012", 5, 5, "x"],   # extra field (malformed line)
+        ["2026-08", "WEEKDAY", 8, "BUS", "01013"],              # missing fields (malformed line)
+        ["2026-08", "WEEKDAY", 11, "BUS", "01012", "5.5", 5],    # decimal volume
+    ],
+    "202701": [
+        ["2027-01", "WEEKDAY", 8, "BUS", "01012", 2100, 210],
+        ["2027-01", "WEEKENDS/HOLIDAY", 8, "BUS", "01012", 500, 50],
     ],
 }
 OD_HEADER = ["YEAR_MONTH", "DAY_TYPE", "TIME_PER_HOUR", "PT_TYPE", "ORIGIN_PT_CODE", "DESTINATION_PT_CODE",

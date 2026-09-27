@@ -17,3 +17,8 @@ __pycache__/
 # per-run Airflow outputs are kept only as the summary written by scripts/airflow_run.sh
 results/airflow/*
 !results/airflow/dag_run.json
+!results/airflow/terminated_attempts.log
+# transient files of a running stream benchmark
+results/.ready-*
+results/.latency-*
+results/.stream_*

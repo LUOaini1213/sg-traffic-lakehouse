@@ -105,9 +105,15 @@ def check_unknown_band(con, cfg):
                    {"rows": n, "links": links, "of_rows": total})
 
 
-def check_sampler_log(settings, con, cfg):
-    log = Path(settings.source_dir) / "speedbands" / "sampler.log"
-    files = sorted((Path(settings.source_dir) / "speedbands").glob("sb_*.csv.gz"))
+def check_sampler_log(settings, con, cfg, until=None):
+    """sampler.log has one line per fetch and no timestamps, so its lines cannot be matched to files or cut at the
+    pipeline's snapshot cutoff. The check therefore compares the whole log with the whole folder at the moment it
+    runs (the sampler may still be adding files), and also reports how many files are up to the cutoff."""
+    from .speedbands import SNAPSHOT_RE, parse_snapshot_name
+    folder = Path(settings.source_dir) / "speedbands"
+    log = folder / "sampler.log"
+    files = sorted(p for p in folder.glob("sb_*.csv.gz") if SNAPSHOT_RE.match(p.name))
+    upto = [p for p in files if until is None or parse_snapshot_name(p.name) <= until]
     if not log.exists():
         return _result("sampler_log_consistency", cfg, False, None, None, {"note": "sampler.log not found"})
     lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -117,6 +123,7 @@ def check_sampler_log(settings, con, cfg):
     return _result("sampler_log_consistency", cfg, len(fetched) == len(files) and not other,
                    len(fetched), len(files),
                    {"log_fetch_lines": len(fetched), "snapshot_files": len(files),
+                    "snapshot_files_up_to_cutoff": len(upto), "cutoff": until.isoformat() if until else None,
                     "row_counts_in_log": sorted(set(fetched)), "other_lines": other[:10],
                     "log_has_timestamps": has_ts})
 
@@ -145,24 +152,29 @@ def check_missing_stops(con, cfg):
 
 
 def check_quarantine(settings, cfg):
-    path = Path(settings.results_dir) / "batch_ingest.json"
+    res = Path(settings.results_dir)
+    path = res / "batch_ingest.json"
     if not path.exists():
         return _result("quarantine_share", cfg, False, None, cfg["max_share"], {"note": "batch_ingest.json missing"})
     loads = json.loads(path.read_text(encoding="utf-8"))["loads"]
-    read = sum(x["rows_read"] for x in loads)
-    q = sum(x["rows_quarantined"] for x in loads)
+    sbf = res / "speedband_files.json"
+    snaps = json.loads(sbf.read_text(encoding="utf-8"))["snapshots"] if sbf.exists() else []
+    read = sum(x["rows_read"] for x in loads) + sum(x["source_rows"] for x in snaps)
+    q = sum(x["rows_quarantined"] for x in loads) + sum(x["rows_quarantined"] for x in snaps)
     reasons, sums = {}, {}
-    for x in loads:
-        for k, v in (x.get("quarantine_reasons") or {}).items():
-            reasons[k] = reasons.get(k, 0) + v
-        for k, v in (x.get("quarantined_sums") or {}).items():
-            sums[k] = sums.get(k, 0) + v
+    for ds, items in [(x["dataset"], [x]) for x in loads] + [("speedbands", snaps)]:
+        for x in items:
+            for k, v in (x.get("quarantine_reasons") or {}).items():
+                reasons[f"{ds}: {k}"] = reasons.get(f"{ds}: {k}", 0) + v
+            for k, v in (x.get("quarantined_sums") or {}).items():
+                sums[k] = sums.get(k, 0) + v
     share = q / read if read else 0.0
     return _result("quarantine_share", cfg, share <= cfg["max_share"], round(share, 8), cfg["max_share"],
-                   {"rows_read": read, "rows_quarantined": q, "reasons": reasons, "volume_in_quarantined_rows": sums})
+                   {"rows_read": read, "rows_quarantined": q, "reasons": dict(sorted(reasons.items())),
+                    "volume_in_quarantined_rows": sums})
 
 
-def run(settings, strict: bool = False) -> tuple[list[dict], bool]:
+def run(settings, strict: bool = False, until=None) -> tuple[list[dict], bool]:
     cfg = yaml.safe_load(THRESHOLDS.read_text(encoding="utf-8"))
     con = duckdb_connect(settings, settings.warehouse, read_only=True)
     results = [
@@ -172,7 +184,7 @@ def run(settings, strict: bool = False) -> tuple[list[dict], bool]:
         check_unknown_links(con, cfg["unknown_link_ids"]),
         check_unobserved(con, cfg["unobserved_metadata_links"]),
         check_unknown_band(con, cfg["unknown_band_share"]),
-        check_sampler_log(settings, con, cfg["sampler_log_consistency"]),
+        check_sampler_log(settings, con, cfg["sampler_log_consistency"], until),
         check_od_vs_tapin(con, cfg["od_vs_tapin"]),
         check_missing_stops(con, cfg["pv_stops_missing_from_master"]),
         check_quarantine(settings, cfg["quarantine_share"]),

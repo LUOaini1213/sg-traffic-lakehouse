@@ -43,7 +43,7 @@ with DAG(
     ingest_batch = BashOperator(task_id="ingest_batch", bash_command=f"{CLI} ingest-batch")
     ingest_speedbands = BashOperator(task_id="ingest_speedbands", bash_command=f"{CLI} ingest-speedbands {CUTOFF}")
     profile = BashOperator(task_id="profile_bronze", bash_command=f"{CLI} profile")
-    dbt_build = BashOperator(task_id="dbt_build", bash_command=f"{CLI} dbt build")
+    dbt_build = BashOperator(task_id="dbt_build", bash_command=f"{CLI} dbt {CUTOFF} build")
     quality = BashOperator(task_id="quality_checks", bash_command=f"{CLI} quality --strict {CUTOFF}", retries=0)
     publish = BashOperator(task_id="publish_metrics", bash_command=f"{CLI} publish && {CLI} report")
 

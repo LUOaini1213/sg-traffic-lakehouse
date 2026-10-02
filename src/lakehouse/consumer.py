@@ -183,11 +183,14 @@ def decode_message(key: bytes | None, value: bytes | None, partition: int, parti
     ts = ts_cache.get(raw_ts) if isinstance(raw_ts, str) else None
     if ts is None:
         try:
-            ts = ts_cache[raw_ts] = dt.datetime.fromisoformat(raw_ts)
+            ts = dt.datetime.fromisoformat(raw_ts)
         except (TypeError, ValueError):
             raise BadMessage("bad_ts") from None
         if ts.tzinfo is not None:
             raise BadMessage("bad_ts")
+        # Cache only validated naive event times. Otherwise the next copy of a
+        # rejected zoned timestamp skips this check and crashes the assembler.
+        ts_cache[raw_ts] = ts
     if key == m.EOS_KEY:
         exp = d.get("expected")
         if isinstance(exp, bool) or not isinstance(exp, int) or exp < 0:

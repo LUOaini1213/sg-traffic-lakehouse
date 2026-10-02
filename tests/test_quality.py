@@ -102,6 +102,54 @@ def test_od_vs_tapin_fails_without_overlap(con):
     assert quality.check_od_vs_tapin(con, cfg(max_relative_diff=0.001))["status"] == "FAIL"
 
 
+@pytest.mark.parametrize("tap_in,trips,expect", [(0, 0, "PASS"), (0, 1000, "FAIL"), (1000, 0, "FAIL")])
+def test_od_vs_tapin_zero_totals(con, tap_in, trips, expect):
+    con.execute("insert into silver.stg_stop_pv values ('2026-08', 'WEEKDAY', '01012', ?)", [tap_in])
+    con.execute("insert into silver.stg_od values ('2026-08', 'WEEKDAY', ?)", [trips])
+    result = quality.check_od_vs_tapin(con, cfg(max_relative_diff=0.001))
+    assert result["status"] == expect
+    # Reports must remain valid JSON, without infinity for an undefined relative difference.
+    json.dumps(result, allow_nan=False)
+    if tap_in == 0 and trips:
+        assert result["details"]["incomparable_groups"] == [{
+            "year_month": "2026-08", "day_type": "WEEKDAY", "tap_in": 0, "od_trips": 1000,
+            "reason": "positive_trips_without_tap_ins",
+        }]
+    elif tap_in == trips == 0:
+        assert result["details"]["by_month_day_type"][0]["relative_diff"] == 0.0
+
+
+@pytest.mark.parametrize("missing", ["tap_in", "od_trips"])
+def test_od_vs_tapin_missing_day_type_in_shared_month(con, missing):
+    con.execute("insert into silver.stg_stop_pv values ('2026-08', 'WEEKDAY', '01012', 1000)")
+    con.execute("insert into silver.stg_od values ('2026-08', 'WEEKDAY', 1000)")
+    if missing == "tap_in":
+        con.execute("insert into silver.stg_od values ('2026-08', 'WEEKENDS/HOLIDAY', 500)")
+    else:
+        con.execute("insert into silver.stg_stop_pv values ('2026-08', 'WEEKENDS/HOLIDAY', '01012', 500)")
+    result = quality.check_od_vs_tapin(con, cfg(max_relative_diff=0.001))
+    assert result["status"] == "FAIL"
+    assert result["details"]["incomparable_groups"] == [{
+        "year_month": "2026-08", "day_type": "WEEKENDS/HOLIDAY",
+        "tap_in": None if missing == "tap_in" else 500,
+        "od_trips": None if missing == "od_trips" else 500,
+        "reason": f"missing_{missing}_group",
+    }]
+
+
+def test_od_vs_tapin_allows_different_month_coverage(con):
+    # The real inputs and the end-to-end fixture cover different months. Compare day types only within shared months.
+    con.execute("insert into silver.stg_stop_pv values ('2026-07', 'WEEKDAY', '01012', 900), "
+                "('2026-08', 'WEEKDAY', '01012', 1000), ('2026-08', 'WEEKENDS/HOLIDAY', '01012', 500)")
+    con.execute("insert into silver.stg_od values ('2026-08', 'WEEKDAY', 1000), "
+                "('2026-08', 'WEEKENDS/HOLIDAY', 500), ('2026-09', 'WEEKDAY', 700)")
+    result = quality.check_od_vs_tapin(con, cfg(max_relative_diff=0.001))
+    assert result["status"] == "PASS" and result["value"] == 0.0
+    assert [(row["year_month"], row["day_type"]) for row in result["details"]["by_month_day_type"]] == [
+        ("2026-08", "WEEKDAY"), ("2026-08", "WEEKENDS/HOLIDAY"),
+    ]
+
+
 @pytest.mark.parametrize("missing_taps,expect", [(1, "PASS"), (2, "FAIL")])
 def test_missing_stops(con, missing_taps, expect):
     con.execute("insert into silver.dim_bus_stop values ('01012')")

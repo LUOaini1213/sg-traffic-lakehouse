@@ -20,7 +20,7 @@ MODELS = REPO / "dbt" / "models"
 # fast unit tests first, so a Python mutant usually dies before the slower end-to-end fixture run
 TESTS = [str(REPO / "tests" / f) for f in
          ("test_quality.py", "test_speedbands.py", "test_stream.py", "test_consumer.py", "test_batch.py",
-          "test_e2e.py")]
+          "test_cutoff.py", "test_e2e.py")]
 
 
 def M(path, old, new=None, tag=""):
@@ -30,6 +30,17 @@ def M(path, old, new=None, tag=""):
 
 
 MUTANTS = [
+    # --- current review: repeated poison records, shared-lake cutoff, incomplete OD comparisons ---------------
+    M(PKG / "consumer.py", "            ts = dt.datetime.fromisoformat(raw_ts)\n",
+      "            ts = ts_cache[raw_ts] = dt.datetime.fromisoformat(raw_ts)\n", tag="review 20261003"),
+    M(PKG / "cli.py", 'rc = run_dbt(settings, a.dbt_args or ["build"], until=_cutoff(a))',
+      'rc = run_dbt(settings, a.dbt_args or ["build"], until=None)', tag="review 20261003"),
+    M(MODELS / "silver" / "stg_speedband_obs.sql", "{% if cutoff %}", "{% if false %}", tag="review 20261003"),
+    M(REPO / "airflow" / "dags" / "sg_traffic_lakehouse.py", 'f"{CLI} dbt {CUTOFF} build"',
+      'f"{CLI} dbt build"', tag="review 20261003"),
+    M(PKG / "quality.py", 'from t full outer join o using (year_month, day_type)',
+      'from t join o using (year_month, day_type)', tag="review 20261003"),
+    M(PKG / "quality.py", 'elif tap_in == 0 and trips != 0:', 'elif False:', tag="review 20261003"),
     # --- parsing and schema enforcement ------------------------------------------------------------------------
     M(PKG / "speedbands.py", r'SNAPSHOT_RE = re.compile(r"^sb_(\d{8})_(\d{4})\.csv\.gz$")',
       r'SNAPSHOT_RE = re.compile(r"sb_(\d{8})_(\d{4})")'),
@@ -165,9 +176,8 @@ INVALID_SQL = re.compile(r"Parser Error|Binder Error|Catalog Error|Compilation E
 
 
 def pytest(suffix: str):
-    """Python mutants run every test file (unit tests first); SQL mutants can only be seen by the end-to-end run,
-    which builds the fixture with dbt, so they run that file alone."""
-    tests = TESTS if suffix == ".py" else [str(REPO / "tests" / "test_e2e.py")]
+    """Python mutants run unit tests first; SQL mutants run the cutoff and full end-to-end dbt checks."""
+    tests = TESTS if suffix == ".py" else [str(REPO / "tests" / f) for f in ("test_cutoff.py", "test_e2e.py")]
     return subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *tests],
                           capture_output=True, text=True, cwd=REPO)
 

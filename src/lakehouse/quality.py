@@ -131,14 +131,32 @@ def check_sampler_log(settings, con, cfg, until=None):
 def check_od_vs_tapin(con, cfg):
     rows = con.execute("""
         with t as (select year_month, day_type, sum(tap_in) as tap_in from silver.stg_stop_pv group by all),
-             o as (select year_month, day_type, sum(trips) as trips from silver.stg_od group by all)
-        select year_month, day_type, tap_in, trips from t join o using (year_month, day_type)
+             o as (select year_month, day_type, sum(trips) as trips from silver.stg_od group by all),
+             shared_months as (select year_month from t intersect select year_month from o)
+        select year_month, day_type, tap_in, trips from t full outer join o using (year_month, day_type)
+        join shared_months using (year_month)
         order by year_month, day_type""").fetchall()
-    out = [{"year_month": ym, "day_type": d, "tap_in": int(t), "od_trips": int(o),
-            "relative_diff": round(abs(o - t) / t, 6) if t else None} for ym, d, t, o in rows]
-    worst = max((r["relative_diff"] or 0 for r in out), default=None)
-    return _result("od_vs_tapin", cfg, bool(out) and worst <= cfg["max_relative_diff"], worst,
-                   cfg["max_relative_diff"], {"by_month_day_type": out})
+    out, incomparable = [], []
+    for ym, day_type, tap_in, trips in rows:
+        row = {"year_month": ym, "day_type": day_type,
+               "tap_in": int(tap_in) if tap_in is not None else None,
+               "od_trips": int(trips) if trips is not None else None}
+        # Different products cover different months, but every day type in a shared month must be comparable.
+        if tap_in is None:
+            reason = "missing_tap_in_group"
+        elif trips is None:
+            reason = "missing_od_trips_group"
+        elif tap_in == 0 and trips != 0:
+            reason = "positive_trips_without_tap_ins"
+        else:
+            row["relative_diff"] = round(abs(trips - tap_in) / tap_in, 6) if tap_in else 0.0
+            out.append(row)
+            continue
+        incomparable.append({**row, "reason": reason})
+    # Undefined comparisons fail explicitly; they must not become zero differences or non-JSON infinity values.
+    worst = None if incomparable else max((r["relative_diff"] for r in out), default=None)
+    return _result("od_vs_tapin", cfg, not incomparable and bool(out) and worst <= cfg["max_relative_diff"], worst,
+                   cfg["max_relative_diff"], {"by_month_day_type": out, "incomparable_groups": incomparable})
 
 
 def check_missing_stops(con, cfg):

@@ -13,6 +13,7 @@ logs/
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv/
 *.egg-info/
 # per-run Airflow outputs are kept only as the summary written by scripts/airflow_run.sh
 results/airflow/*
@@ -22,3 +23,5 @@ results/airflow/*
 results/.ready-*
 results/.latency-*
 results/.stream_*
+results/publications/
+results/publication.json

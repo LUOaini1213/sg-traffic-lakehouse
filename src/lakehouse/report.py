@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import io
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import matplotlib
@@ -12,7 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from .storage import duckdb_connect  # noqa: E402
+from .storage import Lake  # noqa: E402
 
 INK, MUTED, GRID = "#1f2933", "#616e7c", "#e4e7eb"
 SERIES = ["#2563eb", "#d97706", "#059669", "#9333ea"]
@@ -82,8 +85,8 @@ def _table(headers, rows) -> str:
     return f"<table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table>"
 
 
-def run(settings) -> str:
-    con = duckdb_connect(settings, settings.warehouse, read_only=True)
+def prepare(con, settings, release_id: str) -> str:
+    """Render inside the publisher's source transaction, before activation."""
     res = Path(settings.results_dir)
     parts = []
     c1, c2 = chart_congestion(con), chart_demand(con)
@@ -107,11 +110,15 @@ def run(settings) -> str:
     ym = con.execute("select max(year_month) from gold.gold_top_od_flows").fetchone()[0]
     parts.append(f"<h2>Top origin-destination flows, weekdays, {html.escape(str(ym))}</h2>" +
                  _table(["Rank", "Origin", "Destination", "Trips per weekday"], od))
-    con.close()
     q = res / "quality_report.json"
     if q.exists():
-        checks = json.loads(q.read_text(encoding="utf-8"))["checks"]
-        parts.append("<h2>Data quality</h2>" + _table(["Check", "Severity", "Status", "Value", "Threshold"],
+        captured = q.read_bytes()
+        checks = json.loads(captured)["checks"]
+        parts.append("<h2>Captured quality diagnostics</h2>"
+                     "<p>Previously generated diagnostics, captured at publication. They include checks on source "
+                     "files and were not recomputed from this warehouse transaction. "
+                     f"quality_report.json SHA-256: <code>{hashlib.sha256(captured).hexdigest()}</code>.</p>" +
+                     _table(["Check", "Severity", "Status", "Value", "Threshold"],
                      [[c["check"], c["severity"], c["status"], c["value"], c["threshold"]] for c in checks]))
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>SG traffic lakehouse report</title>
@@ -125,10 +132,26 @@ table {{ border-collapse: collapse; width: 100%; font-size: 13px; display: block
 th, td {{ text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }}
 </style></head><body>
 <h1>Singapore traffic lakehouse: gold-layer report</h1>
-<p>Built by <code>python -m lakehouse report</code> from the gold tables. Sources: LTA DataMall.</p>
+<p>Publication <code>{html.escape(release_id)}</code>. Charts and gold tables were captured from the same
+warehouse transaction as this published gold cohort. Sources: LTA DataMall.</p>
 {''.join(parts)}
 </body></html>"""
-    out = res / "report.html"
-    res.mkdir(parents=True, exist_ok=True)
-    out.write_text(page, encoding="utf-8")
+    return page
+
+
+def run(settings) -> str:
+    """Copy the committed report, never regenerate it from a changed warehouse."""
+    snapshot = Lake(settings).gold_snapshot()
+    data = snapshot.read_report()
+    out = Path(settings.results_dir) / "report.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".report-", suffix=".html", dir=out.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, out)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return str(out)

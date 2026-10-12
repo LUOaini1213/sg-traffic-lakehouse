@@ -113,11 +113,24 @@ def cmd_publish(settings, a):
     from . import publish
     res = publish.run(settings)
     print(json.dumps(res["layers"], indent=2))
+    print(json.dumps({"release_id": res["publication"]["release_id"],
+                      "ledger_version": res["publication"]["ledger_version"],
+                      "receipt_warnings": res["receipt_warnings"]}))
 
 
 def cmd_report(settings, a):
     from . import report
     print(report.run(settings))
+
+
+def cmd_publication(settings, a):
+    from .publication import read_snapshot
+    from .storage import Lake
+    snapshot = read_snapshot(Lake(settings), a.version)
+    if a.verify:
+        snapshot.verify()
+    print(json.dumps({"ledger_version": snapshot.ledger_version, "verified": a.verify,
+                      **snapshot.manifest}, indent=2))
 
 
 def cmd_produce(settings, a):
@@ -210,7 +223,10 @@ def main(argv=None):
     s.add_argument("--until", help="the snapshot cutoff the pipeline used (reported by sampler_log_consistency)")
     s.add_argument("--cutoff-utc", help="cutoff as an ISO timestamp with zone (Airflow's data_interval_end)")
     sub.add_parser("publish", help="export gold to the lake and record row counts and hashes")
-    sub.add_parser("report", help="write the static HTML report")
+    sub.add_parser("report", help="copy the active publication's committed HTML report")
+    s = sub.add_parser("publication", help="inspect a coherent gold cohort, independently of local receipts")
+    s.add_argument("--version", type=int, help="historical publication ledger version")
+    s.add_argument("--verify", action="store_true", help="verify stored rows, files and report against the manifest")
     s = sub.add_parser("pipeline", help="the whole batch pipeline without Airflow")
     s.add_argument("--until"), s.add_argument("--strict", action="store_true")
     s = sub.add_parser("produce", help="replay snapshot files to Kafka")
@@ -243,7 +259,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     settings = config.load()
     {"ingest-batch": cmd_ingest_batch, "ingest-speedbands": cmd_ingest_speedbands, "profile": cmd_profile,
-     "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report,
+     "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report, "publication": cmd_publication,
      "pipeline": cmd_pipeline, "produce": cmd_produce, "consume": cmd_consume, "repro": cmd_repro,
      "summarize": cmd_summarize, "live": cmd_live, "stream-bench": cmd_stream_bench}[a.cmd](settings, a)
 

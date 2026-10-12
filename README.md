@@ -41,9 +41,9 @@ flowchart LR
   end
   BR -->|dbt-duckdb, delta_scan| SV[silver<br/>typed, deduplicated]
   SV --> GL[gold marts<br/>+ ML features]
-  GL -->|publish, one commit per table| GD
+  GL -->|stage immutable release<br/>one manifest commit activates all five| GD
   GL --> QC[quality checks<br/>thresholds in YAML]
-  GL --> RPT[static HTML report]
+  GD --> RPT[HTML report captured<br/>with the published cohort]
   AF{{Airflow DAG}} -.orchestrates.-> PV & SV & QC & GD
 ```
 
@@ -51,7 +51,7 @@ flowchart LR
 |---|---|---|
 | bronze | `s3://sgtl-lake/bronze/<table>` (Delta) | Data as published, with types enforced. Speed bands: one table partitioned by `obs_date`, `obs_hour` (event time) and `part` (Kafka partition). Volumes: partitioned by `month`. Rejected rows go to `bronze/_quarantine/<table>`, undecodable stream messages to `bronze/_dead_letter/speedband_stream`. |
 | silver | DuckDB warehouse (dbt) | Typed and renamed; band 0 and band 8's open upper bound (999) set to NULL; snapshot and link dimensions; a calendar derived from the data, with MOM public holidays. |
-| gold | DuckDB, published to `s3://sgtl-lake/gold/<table>` (Delta) | `gold_link_speed_hourly`, `gold_congestion_episodes`, `gold_stop_demand_hourly`, `gold_top_od_flows`, `gold_link_hour_features`. |
+| gold | DuckDB, published to `s3://sgtl-lake/gold/releases/<release-id>/<table>` (Delta) | Five immutable tables, selected together by one `gold/_publication` Delta ledger commit. `Lake` resolves logical `gold/<table>` reads through a captured manifest. |
 
 Code map:
 
@@ -65,7 +65,7 @@ Code map:
 | `src/lakehouse/profiling.py` | Profiles bronze and reconciles it with the source counts. |
 | `dbt/` | Silver and gold models, generic and singular tests, seeds (holidays, band and road-category references). |
 | `src/lakehouse/quality.py`, `config/quality_thresholds.yml` | Custom data-quality checks and their thresholds. |
-| `src/lakehouse/publish.py`, `repro.py` | Gold export with file and content hashes; the reproducibility check. |
+| `src/lakehouse/publish.py`, `publication.py`, `repro.py` | Whole-cohort activation, captured readers and report, stored file/content verification; reproducibility check. |
 | `airflow/dags/sg_traffic_lakehouse.py` | The DAG. |
 | `src/lakehouse/cli.py` | `python -m lakehouse <command>`; runs the same pipeline without Airflow. |
 | `tests/` | pytest suite (with an in-memory Kafka double), synthetic fixture generator, mutation check. |
@@ -119,6 +119,11 @@ bronze keeps newer data and its profile still describes the full stored lake. Th
 reads a DataMall key from `LTA_KEY` at run time. It was not run for this README.
 
 ## Measured results
+
+Publication now stages all five tables and the report before activating one manifest. A failed third-table
+write leaves the previous complete cohort readable. Use `python -m lakehouse publication --verify` to inspect
+the authoritative ledger; local JSON files are convenience receipts. See [publication and reader semantics](docs/PUBLICATION.md)
+for upgrades, failure handling and retention. This correctness change has not rerun the full-data timings below.
 
 The generated block below preserves the full-data measurements from 2026-09-28. It has not been rerun for the
 2026-10-03 reliability fixes; the current fixture validation is described separately below.

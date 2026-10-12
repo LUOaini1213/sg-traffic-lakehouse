@@ -19,7 +19,7 @@ PKG = REPO / "src" / "lakehouse"
 MODELS = REPO / "dbt" / "models"
 # fast unit tests first, so a Python mutant usually dies before the slower end-to-end fixture run
 TESTS = [str(REPO / "tests" / f) for f in
-         ("test_quality.py", "test_speedbands.py", "test_stream.py", "test_consumer.py", "test_batch.py",
+         ("test_quality.py", "test_speedbands.py", "test_stream.py", "test_consumer.py", "test_batch.py", "test_publication.py",
           "test_cutoff.py", "test_e2e.py")]
 
 
@@ -30,6 +30,16 @@ def M(path, old, new=None, tag=""):
 
 
 MUTANTS = [
+    # --- complete publication and pinned readers ----------------------------------------------------------
+    M(PKG / "publication.py", "    candidate.verify()\n", "    pass\n", tag="review publication"),
+    M(PKG / "publication.py", "set(tables) != set(TABLES)", "not tables", tag="review publication"),
+    M(PKG / "publication.py", 'delta.version() != item["delta_version"]', "False", tag="review publication"),
+    M(PKG / "publication.py", "hashlib.sha256(text.encode()).hexdigest() != digest", "False", tag="review publication"),
+    M(PKG / "publication.py", "            committed = read_snapshot(lake, version)\n",
+      "            committed = read_snapshot(lake)\n", tag="review publication"),
+    M(PKG / "storage.py", "        if self._gold_snapshot is None:\n", "        if True:\n", tag="review publication"),
+    M(PKG / "report.py", "    data = snapshot.read_report()\n", '    data = b"Wrong publication report"\n',
+      tag="review publication"),
     # --- current review: repeated poison records, shared-lake cutoff, incomplete OD comparisons ---------------
     M(PKG / "consumer.py", "            ts = dt.datetime.fromisoformat(raw_ts)\n",
       "            ts = ts_cache[raw_ts] = dt.datetime.fromisoformat(raw_ts)\n", tag="review 20261003"),

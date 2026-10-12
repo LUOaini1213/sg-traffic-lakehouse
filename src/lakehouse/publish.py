@@ -1,7 +1,9 @@
 """Publish the gold layer to the lake as Delta tables and record row counts per layer and hashes of every gold table.
 
-Each gold table is written in a fixed row order with one overwrite commit, so a reader of gold/<table> sees either
-the previous publication or the new one. Two hashes are recorded per table:
+All five gold tables are staged under one immutable release ID. One Delta
+ledger commit activates their manifest only after every file is verified.
+A Lake reader captures that manifest once, so a later publication cannot mix
+old and new tables within its read. Two hashes are recorded per table:
   file_sha256    - SHA-256 over the SHA-256s of the table's Parquet data files (delta-rs writes the same bytes for
                    the same input);
   content_sha256 - SHA-256 of the rows serialised as CSV in key order (independent of the Parquet writer).
@@ -13,11 +15,15 @@ import dataclasses
 import hashlib
 import io
 import json
+import os
+import tempfile
+import uuid
 from pathlib import Path
 
 import pyarrow.csv as pacsv
 
 from .profiling import DATASETS, DEAD_LETTER, QUARANTINE
+from .publication import activate, release_path
 from .storage import Lake, duckdb_connect
 
 GOLD = {
@@ -41,13 +47,13 @@ def content_sha256(con, table: str, order: list[str]) -> str:
     return h.hexdigest()
 
 
-def export_gold(settings, con, lake: Lake) -> dict:
+def export_gold(settings, con, lake: Lake, release_id: str) -> dict:
     lake.ensure_bucket()
     out = {}
     for t, order in GOLD.items():
-        rel = f"gold/{t}"
+        rel = release_path(release_id, t)
         reader = con.execute(f"SELECT * FROM gold.{t} ORDER BY {', '.join(order)}").to_arrow_reader(122_880)
-        lake.write_delta(rel, reader, mode="overwrite", schema_mode="overwrite")
+        lake.write_delta(rel, reader, mode="error")
         st = lake.delta_stats(rel)
         files = lake.delta_file_hashes(rel)
         out[t] = {"path": rel, "delta_version": st["version"], "rows": st["rows"], "files": st["files"],
@@ -69,15 +75,61 @@ def layer_counts(settings, con, lake: Lake) -> dict:
     return {"bronze": bronze, "silver": silver, "gold": gold}
 
 
+def _atomic_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".publication-", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as output:
+            json.dump(value, output, indent=2, allow_nan=False)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def _source_fingerprints() -> dict:
+    root = Path(__file__).parent
+    return {path.name: hashlib.sha256(path.read_text(encoding="utf-8").replace("\r\n", "\n").encode()).hexdigest()
+            for path in sorted(root.glob("*.py"))}
+
+
 def run(settings) -> dict:
+    from . import report
     lake = Lake(settings)
     # threads=1: DuckDB then hands over rows strictly in order, which keeps the Parquet bytes reproducible.
     con = duckdb_connect(dataclasses.replace(settings, duckdb_threads=1), settings.warehouse, read_only=True)
-    manifest = export_gold(settings, con, lake)
-    counts = layer_counts(settings, con, lake)
-    con.close()
+    release_id = uuid.uuid4().hex
+    try:
+        con.execute("BEGIN TRANSACTION")
+        manifest = export_gold(settings, con, lake, release_id)
+        counts = layer_counts(settings, con, lake)
+        page = report.prepare(con, settings, release_id).encode("utf-8")
+        report_path = f"gold/releases/{release_id}/report.html"
+        if lake.exists(report_path):
+            raise ValueError("Publication report is immutable")
+        with lake.fs.open_output_stream(lake.path(report_path)) as output:
+            output.write(page)
+    finally:
+        con.close()
     out = Path(settings.results_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "gold_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    (out / "layer_counts.json").write_text(json.dumps(counts, indent=2), encoding="utf-8")
-    return {"gold": manifest, "layers": counts}
+    publication = {"schema_version": 1, "release_id": release_id, "tables": manifest,
+                   "layers": counts, "source_sha256_utf8_lf": _source_fingerprints(),
+                   "report": {"path": report_path, "bytes": len(page), "sha256": hashlib.sha256(page).hexdigest()}}
+    # Receipt preparation can fail without changing the active ledger. These
+    # per-release files also remain recoverable if the process dies after commit.
+    receipt_dir = out / "publications" / release_id
+    _atomic_json(receipt_dir / "manifest.json", publication)
+    committed = activate(lake, publication)
+    warnings = []
+    for name, value in (("gold_manifest.json", manifest), ("layer_counts.json", counts),
+                        ("publication.json", {**publication, "ledger_version": committed.ledger_version})):
+        try:
+            _atomic_json(out / name, value)
+        except OSError:
+            # A local report failure cannot undo a committed object-store
+            # transaction. Report that distinction and keep the ledger authoritative.
+            warnings.append(f"Publication committed; local {name} receipt could not be replaced")
+    return {"gold": manifest, "layers": counts, "publication": {**publication,
+            "ledger_version": committed.ledger_version}, "receipt_warnings": warnings}

@@ -202,17 +202,19 @@ if __name__ == "__main__":
     assert base.returncode == 0, "tests fail on the unmodified code; fix them before running the mutation check\n" + \
         base.stdout[-3000:]
     n_passed = int(re.search(r"(\d+) passed", base.stdout).group(1))
+    print(f"baseline: {n_passed} tests passed", flush=True)
 
     selected = [mu for mu in MUTANTS if not only or any(o in mu["tag"] or o in mu["pairs"][0][0] for o in only)]
     escaped = []
     for mu in selected:
         f = mu["file"]
-        text = f.read_text(encoding="utf-8")
+        original_bytes = f.read_bytes()
+        text = original_bytes.decode("utf-8").replace("\r\n", "\n")
         mutated = text
         for old, new in mu["pairs"]:
             assert text.count(old) == 1, f"mutation target not unique in {f.name}: {old[:70]!r}"
             mutated = mutated.replace(old, new)
-        f.write_text(mutated, encoding="utf-8")
+        f.write_bytes(mutated.encode("utf-8"))
         label = f"{f.name}: {mu['pairs'][0][0].strip()[:70]}" + (f"  [{mu['tag']}]" if mu["tag"] else "")
         try:
             if f.suffix == ".py":
@@ -222,7 +224,8 @@ if __name__ == "__main__":
             if f.suffix == ".sql":
                 assert not INVALID_SQL.search(r.stdout), f"mutant is not valid SQL, so it proves nothing: {label}"
         finally:
-            f.write_text(text, encoding="utf-8")
+            f.write_bytes(original_bytes)
+            assert f.read_bytes() == original_bytes, f"source bytes not restored: {f}"
         killed = r.returncode != 0
         if not killed:
             escaped.append(label)

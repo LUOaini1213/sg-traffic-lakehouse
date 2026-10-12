@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from pathlib import Path
+from threading import Lock
 
 import duckdb
 import pyarrow as pa
@@ -29,6 +30,7 @@ class Lake:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._gold_snapshot = None
+        self._gold_lock = Lock()
         root = settings.lake_root
         if settings.is_s3:
             self.fs = pafs.S3FileSystem(
@@ -59,15 +61,17 @@ class Lake:
 
     def gold_snapshot(self):
         from .publication import read_snapshot
-        if self._gold_snapshot is None:
-            self._gold_snapshot = read_snapshot(self)
-        return self._gold_snapshot
+        with self._gold_lock:
+            if self._gold_snapshot is None:
+                self._gold_snapshot = read_snapshot(self)
+            return self._gold_snapshot
 
     def refresh_gold_snapshot(self):
         """Explicitly start a new coherent read; an existing snapshot stays valid."""
         from .publication import read_snapshot
-        self._gold_snapshot = read_snapshot(self)
-        return self._gold_snapshot
+        with self._gold_lock:
+            self._gold_snapshot = read_snapshot(self)
+            return self._gold_snapshot
 
     def uri(self, rel: str) -> str:
         """URI that DuckDB and delta-rs understand (s3://... or an absolute local path)."""

@@ -37,7 +37,9 @@ MUTANTS = [
     M(PKG / "publication.py", "hashlib.sha256(text.encode()).hexdigest() != digest", "False", tag="review publication"),
     M(PKG / "publication.py", "            committed = read_snapshot(lake, version)\n",
       "            committed = read_snapshot(lake)\n", tag="review publication"),
-    M(PKG / "storage.py", "        if self._gold_snapshot is None:\n", "        if True:\n", tag="review publication"),
+    M(PKG / "storage.py", "            if self._gold_snapshot is None:\n", "            if True:\n", tag="review publication"),
+    M(PKG / "storage.py", "from threading import Lock\n", "from contextlib import nullcontext as Lock\n",
+      tag="review publication"),
     M(PKG / "report.py", "    data = snapshot.read_report()\n", '    data = b"Wrong publication report"\n',
       tag="review publication"),
     # --- current review: repeated poison records, shared-lake cutoff, incomplete OD comparisons ---------------

@@ -6,6 +6,7 @@ import os
 import shutil
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import duckdb
 import pyarrow as pa
@@ -94,6 +95,42 @@ def test_reader_keeps_all_old_tables_until_explicit_refresh(settings):
     assert markers(reader.gold_snapshot()) == [[1]] * 5
     assert markers(reader.refresh_gold_snapshot()) == [[2]] * 5
     assert markers(captured) == [[1]] * 5
+
+
+def test_one_reader_captures_once_even_when_first_queries_are_concurrent(settings, monkeypatch):
+    from lakehouse import publication
+    writer, reader = Lake(settings), Lake(settings)
+    old = activate(writer, stage(settings, writer, 1))
+    original = publication.read_snapshot
+    first_captured, second_capture, release_first = Event(), Event(), Event()
+    calls = []
+    def pause_first_capture(lake, *args, **kwargs):
+        if lake is not reader:
+            return original(lake, *args, **kwargs)
+        calls.append(1)
+        if len(calls) > 1:
+            second_capture.set()
+        snapshot = original(lake, *args, **kwargs)
+        if len(calls) == 1:
+            first_captured.set()
+            assert release_first.wait(5), "controlled first capture was not released"
+        return snapshot
+    monkeypatch.setattr(publication, "read_snapshot", pause_first_capture)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(reader.gold_snapshot)
+        try:
+            assert first_captured.wait(5)
+            activate(writer, stage(settings, writer, 2))
+            second = pool.submit(reader.gold_snapshot)
+            # A competing query must not capture a new cohort while the first
+            # query's old snapshot is being installed on this same reader.
+            second_capture.wait(0.5)
+        finally:
+            release_first.set()
+        left, right = first.result(), second.result()
+    assert len(calls) == 1
+    assert left.release_id == right.release_id == old.release_id
+    assert markers(left) == markers(right) == [[1]] * 5
 
 
 def test_release_paths_and_manifest_copies_cannot_modify_a_published_reader(settings):

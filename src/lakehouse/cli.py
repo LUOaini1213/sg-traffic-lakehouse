@@ -48,7 +48,7 @@ def _write(settings, name: str, obj) -> None:
     (out / name).write_text(json.dumps(obj, indent=2, default=str), encoding="utf-8")
 
 
-def dbt_env(settings) -> dict:
+def dbt_env(settings, *, until: dt.datetime | None = None) -> dict:
     env = dict(os.environ)
     env.update({
         "LAKE_ROOT": settings.lake_root,
@@ -58,6 +58,8 @@ def dbt_env(settings) -> dict:
         "DBT_TARGET_PATH": str(Path(settings.warehouse).parent / "dbt_target"),
         "DBT_LOG_PATH": str(Path(settings.warehouse).parent / "dbt_logs"),
         "DBT_SEND_ANONYMOUS_USAGE_STATS": "false",
+        # Explicitly clear this on unbounded runs; an inherited or previous cutoff must not leak in.
+        "SNAPSHOT_CUTOFF_SGT": until.strftime("%Y-%m-%d %H:%M:%S") if until else "",
         "S3_ENDPOINT": settings.s3_endpoint,
         "AWS_ACCESS_KEY_ID": settings.s3_key,
         "AWS_SECRET_ACCESS_KEY": settings.s3_secret,
@@ -65,11 +67,11 @@ def dbt_env(settings) -> dict:
     return env
 
 
-def run_dbt(settings, args: list[str]) -> int:
+def run_dbt(settings, args: list[str], *, until: dt.datetime | None = None) -> int:
     Path(settings.warehouse).parent.mkdir(parents=True, exist_ok=True)
     exe = Path(sys.executable).parent / "dbt"
     cmd = [str(exe) if exe.exists() else "dbt", *args, "--project-dir", str(DBT_DIR)]
-    return subprocess.run(cmd, env=dbt_env(settings), cwd=DBT_DIR).returncode
+    return subprocess.run(cmd, env=dbt_env(settings, until=until), cwd=DBT_DIR).returncode
 
 
 def cmd_ingest_batch(settings, a):
@@ -93,7 +95,7 @@ def cmd_profile(settings, a):
 
 
 def cmd_dbt(settings, a):
-    rc = run_dbt(settings, a.dbt_args or ["build"])
+    rc = run_dbt(settings, a.dbt_args or ["build"], until=_cutoff(a))
     if rc:
         sys.exit(rc)
 
@@ -111,11 +113,24 @@ def cmd_publish(settings, a):
     from . import publish
     res = publish.run(settings)
     print(json.dumps(res["layers"], indent=2))
+    print(json.dumps({"release_id": res["publication"]["release_id"],
+                      "ledger_version": res["publication"]["ledger_version"],
+                      "receipt_warnings": res["receipt_warnings"]}))
 
 
 def cmd_report(settings, a):
     from . import report
     print(report.run(settings))
+
+
+def cmd_publication(settings, a):
+    from .publication import read_snapshot
+    from .storage import Lake
+    snapshot = read_snapshot(Lake(settings), a.version)
+    if a.verify:
+        snapshot.verify()
+    print(json.dumps({"ledger_version": snapshot.ledger_version, "verified": a.verify,
+                      **snapshot.manifest}, indent=2))
 
 
 def cmd_produce(settings, a):
@@ -200,13 +215,18 @@ def main(argv=None):
     s.add_argument("--cutoff-utc", help="cutoff as an ISO timestamp with zone (Airflow's data_interval_end)")
     sub.add_parser("profile", help="profile bronze and reconcile it with the source files")
     s = sub.add_parser("dbt", help="run dbt with the lake settings, e.g. `dbt build` or `dbt docs generate`")
+    s.add_argument("--until", help="snapshot cutoff in SGT; place before the dbt command")
+    s.add_argument("--cutoff-utc", help="cutoff with time zone (Airflow's data_interval_end); place before build")
     s.add_argument("dbt_args", nargs=argparse.REMAINDER)
     s = sub.add_parser("quality", help="custom data-quality checks")
     s.add_argument("--strict", action="store_true", help="exit non-zero if an error-severity check fails")
     s.add_argument("--until", help="the snapshot cutoff the pipeline used (reported by sampler_log_consistency)")
     s.add_argument("--cutoff-utc", help="cutoff as an ISO timestamp with zone (Airflow's data_interval_end)")
     sub.add_parser("publish", help="export gold to the lake and record row counts and hashes")
-    sub.add_parser("report", help="write the static HTML report")
+    sub.add_parser("report", help="copy the active publication's committed HTML report")
+    s = sub.add_parser("publication", help="inspect a coherent gold cohort, independently of local receipts")
+    s.add_argument("--version", type=int, help="historical publication ledger version")
+    s.add_argument("--verify", action="store_true", help="verify stored rows, files and report against the manifest")
     s = sub.add_parser("pipeline", help="the whole batch pipeline without Airflow")
     s.add_argument("--until"), s.add_argument("--strict", action="store_true")
     s = sub.add_parser("produce", help="replay snapshot files to Kafka")
@@ -239,7 +259,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     settings = config.load()
     {"ingest-batch": cmd_ingest_batch, "ingest-speedbands": cmd_ingest_speedbands, "profile": cmd_profile,
-     "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report,
+     "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report, "publication": cmd_publication,
      "pipeline": cmd_pipeline, "produce": cmd_produce, "consume": cmd_consume, "repro": cmd_repro,
      "summarize": cmd_summarize, "live": cmd_live, "stream-bench": cmd_stream_bench}[a.cmd](settings, a)
 

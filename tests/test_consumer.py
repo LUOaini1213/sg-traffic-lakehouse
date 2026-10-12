@@ -183,6 +183,66 @@ def test_bad_messages_go_to_the_dead_letter_table(s):
     assert len(bronze(lake)) == 3
 
 
+def timestamp_broker(bad_ts, bad_kind):
+    """A valid naive timestamp establishes assembler state before two bad copies."""
+    broker = fakekafka.Broker("t", P)
+    broker.produce(0, b"3", m.encode_record(T0.isoformat(), 3, 3, 20, 29))
+    key, value = ((b"6", m.encode_record(bad_ts, 6, 3, 20, 29)) if bad_kind == "record"
+                  else (m.EOS_KEY, m.encode_eos(bad_ts, 2, 2)))
+    broker.produce(0, key, value)
+    broker.produce(0, key, value)
+    broker.produce(0, b"9", m.encode_record(T0.isoformat(), 9, 4, 30, 39))
+    broker.produce(0, m.EOS_KEY, m.encode_eos(T0.isoformat(), 2, 2))
+    return broker
+
+
+@pytest.mark.parametrize("bad_ts", ["2026-09-05T08:20:00+08:00", "2026-09-05T00:20:00Z"])
+@pytest.mark.parametrize("bad_kind", ["record", "eos"])
+@pytest.mark.parametrize("chunk", [1, 100])
+def test_repeated_timezone_timestamps_are_dead_lettered_without_poisoning_cache(s, bad_ts, bad_kind, chunk):
+    broker = timestamp_broker(bad_ts, bad_kind)
+    lake = Lake(s)
+    bc = BronzeConsumer(s, lake, fakekafka.Consumer(broker, "g", chunk=chunk), log=quiet)
+    res = drain(bc)
+    # Both copies retain the same validation outcome, within or across poll batches.
+    letters = lake.delta(DLQ_TABLE).to_pyarrow_table().to_pylist()
+    assert {(row["kafka_partition"], row["kafka_offset"], row["reason"]) for row in letters} == {
+        (0, 1, "bad_ts"), (0, 2, "bad_ts")}
+    assert all(json.loads(row["value"])["ts"] == bad_ts for row in letters)
+    assert res["dead_lettered"] == 2 and res["records_consumed"] == 2
+    assert res["eos_markers"] == 1 and res["flushes_incomplete"] == 0
+    assert {(row["snapshot_ts"], row["link_id"], row["speed_band"]) for row in bronze(lake)} == {
+        (T0, 3, 3), (T0, 9, 4)}
+    assert bad_ts not in bc.ts_cache and bc.ts_cache[T0.isoformat()] == T0
+    assert broker.committed["g"] == {p: len(broker.logs[p]) for p in range(P)}
+
+
+@pytest.mark.parametrize("bad_kind", ["record", "eos"])
+def test_restart_after_repeated_bad_timestamp_writes_commits_without_duplication(s, bad_kind):
+    broker = timestamp_broker("2026-09-05T08:20:00+08:00", bad_kind)
+    lake = Lake(s)
+
+    def crash_before_offset_commit(_n):
+        raise Crash
+
+    first = BronzeConsumer(s, lake, fakekafka.Consumer(broker, "g", chunk=100),
+                           log=quiet, on_write=crash_before_offset_commit)
+    with pytest.raises(Crash):
+        drain(first)
+    assert broker.committed.get("g", {}) == {}
+    assert len(bronze(lake)) == 2 and len(lake.delta(DLQ_TABLE).to_pyarrow_table()) == 2
+    # Restart from uncommitted offsets: bad records must not crash repeatedly,
+    # and both Delta sinks must preserve exactly one row per original identity.
+    second = BronzeConsumer(s, lake, fakekafka.Consumer(broker, "g", chunk=100), log=quiet)
+    res = drain(second)
+    assert res["dead_lettered"] == 0 and res["rows_new_in_bronze"] == 0
+    assert res["records_consumed"] == 2 and res["offset_commits"] == 1
+    assert broker.committed["g"] == {p: len(broker.logs[p]) for p in range(P)}
+    third = drain(BronzeConsumer(s, lake, fakekafka.Consumer(broker, "g"), log=quiet))
+    assert third["records_consumed"] == third["dead_lettered"] == third["offset_commits"] == 0
+    assert len(bronze(lake)) == 2 and len(lake.delta(DLQ_TABLE).to_pyarrow_table()) == 2
+
+
 def test_latency_is_measured_from_the_end_of_snapshot_marker(s):
     """Records produced long ago, marker produced 0.5 s ago: the reported latency is marker -> bronze write."""
     broker = fakekafka.Broker("t", P)

@@ -45,7 +45,7 @@ jobs:
           sed -i "s#^SOURCE_DIR_HOST=.*#SOURCE_DIR_HOST=$PWD/tests/fixtures/raw/datamall#" .env
           docker compose up -d --wait redpanda
           docker compose up -d minio
-      - name: Kafka -> MinIO Delta bronze -> dbt on the fixture
+      - name: Kafka -> MinIO Delta bronze -> dbt; coherent gold publication on MinIO
         run: bash scripts/stack_smoke.sh
       - name: Stop the stack
         if: always()

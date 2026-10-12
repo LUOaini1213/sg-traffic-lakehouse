@@ -3,6 +3,11 @@
 -- the copy written first wins, as in bronze.
 with src as (
     select * from {{ source('bronze', 'speedbands') }}
+    {%- set cutoff = env_var('SNAPSHOT_CUTOFF_SGT', '') %}
+    {% if cutoff %}
+    -- Bronze may already contain newer snapshots from streaming or a later run.
+    where snapshot_ts <= cast('{{ cutoff | replace("'", "''") }}' as timestamp)
+    {% endif %}
 ),
 
 ranked as (

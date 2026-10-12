@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from pathlib import Path
+from threading import Lock
 
 import duckdb
 import pyarrow as pa
@@ -28,6 +29,8 @@ class Lake:
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        self._gold_snapshot = None
+        self._gold_lock = Lock()
         root = settings.lake_root
         if settings.is_s3:
             self.fs = pafs.S3FileSystem(
@@ -46,7 +49,29 @@ class Lake:
 
     # -- paths -------------------------------------------------------------------------------------------------------
     def path(self, rel: str) -> str:
+        # Logical gold aliases are bound once per Lake reader. Related queries
+        # cannot silently switch cohorts when a new publication commits.
+        from .publication import TABLES
+        if rel in {f"gold/{table}" for table in TABLES}:
+            table = rel.split("/", 1)[1]
+            snapshot = self.gold_snapshot()
+            snapshot.delta(table)
+            rel = snapshot.tables[table]["path"]
         return f"{self.base}/{rel.lstrip('/')}"
+
+    def gold_snapshot(self):
+        from .publication import read_snapshot
+        with self._gold_lock:
+            if self._gold_snapshot is None:
+                self._gold_snapshot = read_snapshot(self)
+            return self._gold_snapshot
+
+    def refresh_gold_snapshot(self):
+        """Explicitly start a new coherent read; an existing snapshot stays valid."""
+        from .publication import read_snapshot
+        with self._gold_lock:
+            self._gold_snapshot = read_snapshot(self)
+            return self._gold_snapshot
 
     def uri(self, rel: str) -> str:
         """URI that DuckDB and delta-rs understand (s3://... or an absolute local path)."""
@@ -116,6 +141,11 @@ class Lake:
                     schema_mode: str | None = None) -> None:
         """One Delta commit. mode='overwrite' with a predicate atomically replaces exactly the rows matching it
         (replaceWhere): readers see either the old rows or the new ones, never an empty or half-written partition."""
+        from .publication import TABLES
+        if rel in {f"gold/{table}" for table in TABLES}:
+            raise ValueError("Write gold through a complete publication, not a logical read alias")
+        if rel.startswith("gold/releases/") and (mode != "error" or self.delta(rel) is not None):
+            raise ValueError("Gold release tables are immutable")
         write_deltalake(self.uri(rel), data, mode=mode, predicate=predicate, partition_by=partition_by,
                         storage_options=self.storage_options, schema_mode=schema_mode,
                         commit_properties=CommitProperties(custom_metadata={k: str(v) for k, v in (metadata or {}).items()}))

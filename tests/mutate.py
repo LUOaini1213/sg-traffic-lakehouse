@@ -19,8 +19,8 @@ PKG = REPO / "src" / "lakehouse"
 MODELS = REPO / "dbt" / "models"
 # fast unit tests first, so a Python mutant usually dies before the slower end-to-end fixture run
 TESTS = [str(REPO / "tests" / f) for f in
-         ("test_quality.py", "test_speedbands.py", "test_stream.py", "test_consumer.py", "test_batch.py",
-          "test_e2e.py")]
+         ("test_quality.py", "test_speedbands.py", "test_stream.py", "test_consumer.py", "test_batch.py", "test_publication.py",
+          "test_cutoff.py", "test_e2e.py")]
 
 
 def M(path, old, new=None, tag=""):
@@ -30,6 +30,29 @@ def M(path, old, new=None, tag=""):
 
 
 MUTANTS = [
+    # --- complete publication and pinned readers ----------------------------------------------------------
+    M(PKG / "publication.py", "    candidate.verify()\n", "    pass\n", tag="review publication"),
+    M(PKG / "publication.py", "set(tables) != set(TABLES)", "not tables", tag="review publication"),
+    M(PKG / "publication.py", 'delta.version() != item["delta_version"]', "False", tag="review publication"),
+    M(PKG / "publication.py", "hashlib.sha256(text.encode()).hexdigest() != digest", "False", tag="review publication"),
+    M(PKG / "publication.py", "            committed = read_snapshot(lake, version)\n",
+      "            committed = read_snapshot(lake)\n", tag="review publication"),
+    M(PKG / "storage.py", "            if self._gold_snapshot is None:\n", "            if True:\n", tag="review publication"),
+    M(PKG / "storage.py", "from threading import Lock\n", "from contextlib import nullcontext as Lock\n",
+      tag="review publication"),
+    M(PKG / "report.py", "    data = snapshot.read_report()\n", '    data = b"Wrong publication report"\n',
+      tag="review publication"),
+    # --- current review: repeated poison records, shared-lake cutoff, incomplete OD comparisons ---------------
+    M(PKG / "consumer.py", "            ts = dt.datetime.fromisoformat(raw_ts)\n",
+      "            ts = ts_cache[raw_ts] = dt.datetime.fromisoformat(raw_ts)\n", tag="review 20261003"),
+    M(PKG / "cli.py", 'rc = run_dbt(settings, a.dbt_args or ["build"], until=_cutoff(a))',
+      'rc = run_dbt(settings, a.dbt_args or ["build"], until=None)', tag="review 20261003"),
+    M(MODELS / "silver" / "stg_speedband_obs.sql", "{% if cutoff %}", "{% if false %}", tag="review 20261003"),
+    M(REPO / "airflow" / "dags" / "sg_traffic_lakehouse.py", 'f"{CLI} dbt {CUTOFF} build"',
+      'f"{CLI} dbt build"', tag="review 20261003"),
+    M(PKG / "quality.py", 'from t full outer join o using (year_month, day_type)',
+      'from t join o using (year_month, day_type)', tag="review 20261003"),
+    M(PKG / "quality.py", 'elif tap_in == 0 and trips != 0:', 'elif False:', tag="review 20261003"),
     # --- parsing and schema enforcement ------------------------------------------------------------------------
     M(PKG / "speedbands.py", r'SNAPSHOT_RE = re.compile(r"^sb_(\d{8})_(\d{4})\.csv\.gz$")',
       r'SNAPSHOT_RE = re.compile(r"sb_(\d{8})_(\d{4})")'),
@@ -165,9 +188,8 @@ INVALID_SQL = re.compile(r"Parser Error|Binder Error|Catalog Error|Compilation E
 
 
 def pytest(suffix: str):
-    """Python mutants run every test file (unit tests first); SQL mutants can only be seen by the end-to-end run,
-    which builds the fixture with dbt, so they run that file alone."""
-    tests = TESTS if suffix == ".py" else [str(REPO / "tests" / "test_e2e.py")]
+    """Python mutants run unit tests first; SQL mutants run the cutoff and full end-to-end dbt checks."""
+    tests = TESTS if suffix == ".py" else [str(REPO / "tests" / f) for f in ("test_cutoff.py", "test_e2e.py")]
     return subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *tests],
                           capture_output=True, text=True, cwd=REPO)
 
@@ -180,17 +202,19 @@ if __name__ == "__main__":
     assert base.returncode == 0, "tests fail on the unmodified code; fix them before running the mutation check\n" + \
         base.stdout[-3000:]
     n_passed = int(re.search(r"(\d+) passed", base.stdout).group(1))
+    print(f"baseline: {n_passed} tests passed", flush=True)
 
     selected = [mu for mu in MUTANTS if not only or any(o in mu["tag"] or o in mu["pairs"][0][0] for o in only)]
     escaped = []
     for mu in selected:
         f = mu["file"]
-        text = f.read_text(encoding="utf-8")
+        original_bytes = f.read_bytes()
+        text = original_bytes.decode("utf-8").replace("\r\n", "\n")
         mutated = text
         for old, new in mu["pairs"]:
             assert text.count(old) == 1, f"mutation target not unique in {f.name}: {old[:70]!r}"
             mutated = mutated.replace(old, new)
-        f.write_text(mutated, encoding="utf-8")
+        f.write_bytes(mutated.encode("utf-8"))
         label = f"{f.name}: {mu['pairs'][0][0].strip()[:70]}" + (f"  [{mu['tag']}]" if mu["tag"] else "")
         try:
             if f.suffix == ".py":
@@ -200,7 +224,8 @@ if __name__ == "__main__":
             if f.suffix == ".sql":
                 assert not INVALID_SQL.search(r.stdout), f"mutant is not valid SQL, so it proves nothing: {label}"
         finally:
-            f.write_text(text, encoding="utf-8")
+            f.write_bytes(original_bytes)
+            assert f.read_bytes() == original_bytes, f"source bytes not restored: {f}"
         killed = r.returncode != 0
         if not killed:
             escaped.append(label)

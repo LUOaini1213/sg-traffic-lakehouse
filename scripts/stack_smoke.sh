@@ -6,6 +6,7 @@
 #   3. the batch pipeline against MinIO (its file backfill must add nothing);
 #   4. MinIO honours the conditional PUT that makes Delta commits safe: a commit file that already exists is never
 #      overwritten by a writer that loses the race.
+#   5. whole-cohort publication failure/concurrency/readers/report checks against real MinIO prefixes.
 # Used by CI and runnable locally after `docker compose up -d redpanda minio`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -82,4 +83,5 @@ with lake.fs.open_input_stream(nxt) as f:
     assert b"SMOKE-TEST" in f.read(), "an existing Delta commit file was overwritten"
 print("stack smoke test passed:", json.dumps(layers["gold"]))
 PY
+PUBLICATION_TEST_ROOT="$LAKE_ROOT/publication-tests" $PY -m pytest tests/test_publication.py -q
 rm -rf "$WORK"

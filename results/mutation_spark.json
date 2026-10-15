@@ -1,0 +1,62 @@
+{
+  "tests_passed": 9,
+  "total": 18,
+  "killed": 18,
+  "escaped": [],
+  "first_failing_test": {
+    "spark_jobs.py: F.col(\"_ingested_at\").asc_nulls_last()": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: valid = F.col(\"speed_band\").between(1, 8)": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: F.when(F.col(\"max_speed\") == 999, F.lit(None))": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: src = src.where(F.col(\"snapshot_ts\") <= F.lit(": [
+      "test_cutoff_filters_bronze_before_silver"
+    ],
+    "spark_jobs.py: F.coalesce(F.col(\"gap_minutes\") > F.lit(max_gap_minutes), F.lit(True))": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: weekend = F.dayofweek(obs_date).isin(1, 7)": [
+      "test_day_type_uses_the_holiday_seed_and_iso_weekend"
+    ],
+    "spark_jobs.py: F.when(weekend | F.array_contains(hol, obs_date), \"WEEKENDS/HOLIDAY\")": [
+      "test_day_type_uses_the_holiday_seed_and_iso_weekend"
+    ],
+    "spark_jobs.py: F.countDistinct(\"obs_date\").alias(\"n_days\")": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: o = stg.where(F.col(\"speed_band\").isNotNull())": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: F.when(F.col(\"speed_band\") <= congestion_band_max, 1)": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: islands.groupBy(\"link_id\", \"sampling_run\", \"island\")": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: .where(F.col(\"road_category\").isin(*road_categories)))": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_jobs.py: F.date_format(\"start_ts\", \"yyyyMMdd'T'HHmm\")": [
+      "test_every_spark_model_matches_dbt_exactly"
+    ],
+    "spark_stream.py: Window.partitionBy(\"snapshot_ts\", \"link_id\").orderBy(\"partition\", \"offset\")": [
+      "test_stream_sink_is_idempotent_and_dead_letters_bad_messages"
+    ],
+    "spark_stream.py: t.alias(\"t\").merge(src.alias(\"s\"), on).whenNotMatchedInsertAll().execute()": [
+      "test_stream_sink_is_idempotent_and_dead_letters_bad_messages"
+    ],
+    "spark_stream.py: .when(F.pmod(link, F.lit(partitions)) != F.col(\"partition\"), \"wrong_partition\")": [
+      "test_stream_sink_is_idempotent_and_dead_letters_bad_messages"
+    ],
+    "spark_stream.py: TS_FORMAT = \"yyyy-MM-dd'T'HH:mm:ss\"": [
+      "test_stream_sink_is_idempotent_and_dead_letters_bad_messages"
+    ],
+    "spark_stream.py: .when(F.col(\"k\").isNull() | (F.col(\"k\") != link.cast(\"string\")), \"key_does_not_m": [
+      "test_stream_sink_is_idempotent_and_dead_letters_bad_messages"
+    ]
+  }
+}

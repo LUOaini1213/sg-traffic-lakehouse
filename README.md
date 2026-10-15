@@ -2,7 +2,8 @@
 
 A lakehouse pipeline for Singapore land-transport data that runs on one machine. It covers streaming and batch
 ingest into Delta Lake tables, a bronze/silver/gold (medallion) layout, dbt models and tests, data-quality checks,
-an Airflow DAG and a reproducibility check.
+an Airflow DAG and a reproducibility check. A PySpark layer re-implements the speed-band silver and gold models
+and the Kafka-to-bronze sink (Structured Streaming); its outputs are reconciled row for row with the dbt tables.
 
 The data comes from LTA DataMall:
 
@@ -68,6 +69,7 @@ Code map:
 | `src/lakehouse/publish.py`, `publication.py`, `repro.py` | Whole-cohort activation, captured readers and report, stored file/content verification; reproducibility check. |
 | `airflow/dags/sg_traffic_lakehouse.py` | The DAG. |
 | `src/lakehouse/cli.py` | `python -m lakehouse <command>`; runs the same pipeline without Airflow. |
+| `src/lakehouse/spark_jobs.py`, `spark_stream.py`, `spark_stream_bench.py` | PySpark layer: four speed-band models with reconciliation against dbt, Structured Streaming from Kafka to Delta, crash and latency runs ([below](#apache-spark-layer-2026-10-15)). |
 | `tests/` | pytest suite (with an in-memory Kafka double), synthetic fixture generator, mutation check. |
 
 ## How to run
@@ -81,6 +83,7 @@ python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 make test               # pytest: unit tests + end-to-end fixture run (dbt build with all dbt tests) + reproducibility
 make fixture-pipeline   # ingest -> profile -> dbt build -> quality -> publish -> report, local-directory lake
 make mutate             # planted bugs in Python and SQL; every one must make a test fail
+make spark-test spark-mutate   # PySpark layer (pip install -r requirements-spark.txt, JDK 17+)
 ```
 
 The fixture (`tests/fixtures`, written by `tests/make_fixture.py`) is synthetic. It contains planted defects:
@@ -273,6 +276,104 @@ Current local regression: **123 pytest tests pass**, including fixture dbt build
 check. The standalone fixture pipeline and archived README consistency check also pass. All six new mutations
 were killed locally. The complete harness now has 71 mutants and runs the bounded dbt test for SQL mutations;
 the archived 65/65 measurement above describes the previous version, not the expanded suite.
+
+## Apache Spark layer (2026-10-15)
+
+A second engine for part of the pipeline, written with PySpark 4.0.1 and delta-spark 4.0.1 and run in local mode
+(`local[*]`, 8 cores, 3 GB driver) on the same laptop. It does not replace dbt or the Python consumer. Spark reads
+and writes Delta tables in a local-directory lake; no S3 connector is configured for it, so these runs did not use
+MinIO.
+
+- **Batch** (`src/lakehouse/spark_jobs.py`, `python -m lakehouse spark-batch`): the four speed-band models
+  `stg_speedband_obs`, `dim_snapshot`, `gold_link_speed_hourly` and `gold_congestion_episodes`, re-implemented with
+  the DataFrame API (window functions for the first-copy-wins dedup, the sampling runs and the gaps-and-islands
+  episodes). They read the same bronze Delta table as dbt. Thresholds come from `dbt/dbt_project.yml` and holidays
+  from the dbt seed, so both engines use one configuration.
+- **Reconciliation** (`spark-batch --reconcile`): DuckDB reads each Spark output and the dbt table of the same name.
+  It compares row counts, counts rows found on only one side (`EXCEPT ALL` in both directions), and compares a digest
+  per partition (row count and the sum of 64-bit hashes of each row's text). The command exits 1 on any difference.
+- **Streaming** (`src/lakehouse/spark_stream.py`, `python -m lakehouse spark-stream`): Structured Streaming from the
+  Redpanda topic, with the same wire format, into its own table `bronze/speedbands_spark`. Kafka offsets live in
+  the checkpoint. Each micro-batch is one insert-only Delta MERGE on `(snapshot_ts, link_id)` inside `foreachBatch`,
+  so Spark's replay of a batch after a crash inserts nothing. Bad messages go to `bronze/_dead_letter/speedband_spark`
+  (MERGE on partition and offset), using the validation rules of `consumer.py`.
+
+### Batch: Spark against dbt on the same bronze
+
+`spark-batch --bench 3 --reconcile` against warehouses that `dbt build` had already built with the same cutoff.
+dbt time is `dbt run --select` on the four models (DuckDB, 4 threads, the repository's 1,500 MB memory limit), with
+no JVM running. Spark time is three builds in one session, each model written as a Delta table and read back, as
+dbt materialises tables. Session start-up is counted separately.
+
+| Input | Model | Rows (dbt = Spark) | Rows on one side only | Partitions with equal digest |
+|---|---|---|---|---|
+| 25 snapshots (to 2026-09-27 19:23) | stg_speedband_obs | 3,594,675 | 0 / 0 | 2/2 (date) |
+| | dim_snapshot | 25 | 0 / 0 | 2/2 (date) |
+| | gold_link_speed_hourly | 1,293,678 | 0 / 0 | 9/9 (hour) |
+| | gold_congestion_episodes | 11,015 | 0 / 0 | 2/2 (start date) |
+| 209 snapshots (to 2026-10-03 00:06) | stg_speedband_obs | 30,051,483 | 0 / 0 | 8/8 |
+| | dim_snapshot | 209 | 0 / 0 | 8/8 |
+| | gold_link_speed_hourly | 4,887,228 | 0 / 0 | 24/24 |
+| | gold_congestion_episodes | 69,220 | 0 / 0 | 7/7 |
+
+The two engines produced identical tables on both inputs, including the rounded averages.
+
+| Input | dbt-duckdb runs | Spark runs (start-up) |
+|---|---|---|
+| 3.6 M observations | 18.57 s, 6.53 s, 6.44 s | 30.26 s, 14.60 s, 12.57 s (18.97 s) |
+| 30.1 M observations | 125.11 s, 49.01 s; a third run failed after 15.79 s: DuckDB out of memory at its 1,500 MB limit | 74.08 s, 52.61 s, 60.69 s (20.3 s) |
+
+- On 3.6 M rows DuckDB was about twice as fast as Spark.
+- On 30.1 M rows the two were in the same range, and Spark finished all three runs. One of the three dbt runs failed
+  with an out-of-memory error at the repository's DuckDB limit. Earlier `dbt build` runs on the same input had
+  succeeded with that limit.
+- These are three runs each on one shared laptop. They are not a benchmark of the engines.
+
+### Streaming: crash and restart on Redpanda
+
+`spark-stream-bench` replays the 25 snapshots: 3,594,750 messages, including 75 end-of-snapshot markers, on 3
+partitions. `maxOffsetsPerTrigger` is 500,000. Each run has its own topic, checkpoint and table. Each final table is
+compared with the bronze table that the file backfill wrote from the same files.
+
+| Run | Fault | Stored before restart | Restart | Final rows | Keys lost | Duplicate keys | Payload differs |
+|---|---|---|---|---|---|---|---|
+| crash | `os._exit(70)` right after the 3rd Delta commit, before Spark records the batch as done | 1,431,340 | 6 batches; the first (499,989 records, a replay of the 3rd) inserted 0 rows | 3,594,675 | 0 | 0 | 0 |
+| sigkill | `SIGKILL` to the driver's process group (Python and JVM) 1.5 s after the 4th batch was logged | 1,609,376 | 4 batches; the first inserted 499,989 rows (the killed batch had not committed) | 3,594,675 | 0 | 0 | 0 |
+
+- The two runs cover both crash points. In the first, the Delta commit is done and Spark's commit log is not, so
+  Spark replays a batch that is already stored and the MERGE inserts nothing. In the second, the process died
+  before the next Delta commit, so the replayed batch was new to the table.
+- Unpaced, the sink took 46,768 and 52,828 records/s before the faults and 64,330 to 65,777 records/s after the
+  restarts, while a backlog was waiting. Records/s run from the first batch's start to the last commit.
+- Paced replay (×120, as in the Python consumer's latency run): 43 micro-batches with a median of 3.23 s each, and 0
+  rows lost or duplicated. Latency from a partition's end-of-snapshot marker (producer timestamp) to the end of the
+  Delta commit that contains it, over 75 markers: **p50 5.56 s, p95 16.43 s, max 18.0 s**. The Python consumer
+  measured 1.9 / 4.5 / 4.9 s in its own run (above). In this setup, Spark's micro-batches add latency.
+- Not implemented in the Spark sink: snapshot reassembly and the watermark (`_late` is NULL), and counting repeated
+  keys with a different payload. Insert-only keeps the first copy of a key, but the sink does not count the others.
+
+### Tests and mutation check
+
+- `tests/test_spark.py`, 9 tests, runs in a separate CI job (`spark`) with the runner's JDK 17 and
+  `requirements-spark.txt`. It skips where pyspark is not installed, so the main job is unchanged.
+  - On the fixture, every Spark model must reconcile exactly with dbt. The test also checks hand-worked values (the
+    episodes, sampling runs, the planted duplicate, band 0 and 999) and the cutoff.
+  - A meta-test changes one `mean_band` by 0.0001 and checks that the reconciliation reports exactly one row on each
+    side and one partition with a different digest.
+  - The streaming sink is called with Kafka-shaped batches. It is called twice with the same batch (a replay) and
+    then with redelivered keys that carry another payload. The test checks the dead-letter reasons and the
+    end-of-snapshot latency entries.
+- `python tests/mutate.py --spark`: **18/18 planted bugs in the Spark code killed** (13 in the batch models, 5 in the
+  streaming sink); each one makes `tests/test_spark.py` fail, and the first failing test per mutant is recorded in
+  `results/mutation_spark.json`. The fixture has only a Saturday and a Monday, so it cannot tell
+  Spark's `dayofweek` (Sunday = 1) from DuckDB's `isodow` (Sunday = 7). The day-type unit test adds a Friday, a
+  Sunday and a weekday holiday for that mutant.
+
+Run it yourself: `pip install -r requirements-spark.txt` (needs a JDK 17+), `make spark-test spark-mutate`. For the
+real-data numbers, set `LAKE_ROOT` to a local directory, run `ingest-batch`, `ingest-speedbands --until …` and
+`dbt --until … build`, and then run `make spark-batch` and `make spark-stream-bench` (with `make up` for Redpanda).
+Results: `results/spark_batch_25_snapshots.json`, `results/spark_batch_209_snapshots.json`,
+`results/spark_stream.json`, `results/mutation_spark.json`.
 
 ## Design decisions
 

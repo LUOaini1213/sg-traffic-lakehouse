@@ -1,0 +1,200 @@
+{
+  "snapshots": 25,
+  "first": "2026-09-26T19:28:00",
+  "last": "2026-09-27T19:23:00",
+  "spark": "4.0.1",
+  "partitions": 3,
+  "max_offsets_per_trigger": 500000,
+  "crash": {
+    "topic": "sg.speedbands.spark-crash-20261015100418",
+    "table": "bronze/speedbands_spark_crash",
+    "mode": "exit",
+    "crash_after_batches": 3,
+    "killed_after_logged_batches": null,
+    "first_exit_code": 70,
+    "restart_exit_code": 0,
+    "producer": {
+      "snapshots": 25,
+      "messages": 3594750,
+      "bytes": 264543707,
+      "duplicates_injected": 0,
+      "delivery_errors": 0,
+      "send_seconds": 18.494754790000343,
+      "paced_sleep_seconds": 0.0,
+      "msgs_per_s": 194366,
+      "mb_per_s": 14.3
+    },
+    "first_process": {
+      "batches": 3,
+      "batches_with_bronze_commit": 3,
+      "records": 1431340,
+      "rows_inserted": 1431340,
+      "batches_inserting_nothing": 0,
+      "dead_lettered": 0,
+      "active_seconds": 30.6,
+      "records_per_s": 46768,
+      "eos_to_commit_s": {
+        "p50": 22.7,
+        "p95": 26.13,
+        "max": 26.13,
+        "n": 27
+      },
+      "batch_seconds_median": 8.88
+    },
+    "bronze_after_crash": {
+      "rows": 1431340,
+      "distinct_keys": 1431340,
+      "duplicate_rows": 0,
+      "reference_rows": 1437870,
+      "keys_lost": 6530,
+      "keys_added": 0,
+      "payload_differs": 0
+    },
+    "restart": {
+      "batches": 6,
+      "batches_with_bronze_commit": 6,
+      "records": 2663324,
+      "rows_inserted": 2163335,
+      "batches_inserting_nothing": 1,
+      "dead_lettered": 0,
+      "active_seconds": 40.5,
+      "records_per_s": 65777,
+      "eos_to_commit_s": {
+        "p50": 54.59,
+        "p95": 58.96,
+        "max": 59.67,
+        "n": 57
+      },
+      "batch_seconds_median": 5.48
+    },
+    "restart_first_batch_inserted": 0,
+    "restart_wall_seconds": 84.8,
+    "bronze_final": {
+      "rows": 3594675,
+      "distinct_keys": 3594675,
+      "duplicate_rows": 0,
+      "reference_rows": 3594675,
+      "keys_lost": 0,
+      "keys_added": 0,
+      "payload_differs": 0
+    }
+  },
+  "sigkill": {
+    "topic": "sg.speedbands.spark-sigkill-20261015100728",
+    "table": "bronze/speedbands_spark_sigkill",
+    "mode": "sigkill",
+    "crash_after_batches": null,
+    "killed_after_logged_batches": 4,
+    "first_exit_code": -9,
+    "restart_exit_code": 0,
+    "producer": {
+      "snapshots": 25,
+      "messages": 3594750,
+      "bytes": 264543707,
+      "duplicates_injected": 0,
+      "delivery_errors": 0,
+      "send_seconds": 13.747095927999453,
+      "paced_sleep_seconds": 0.0,
+      "msgs_per_s": 261492,
+      "mb_per_s": 19.24
+    },
+    "first_process": {
+      "batches": 4,
+      "batches_with_bronze_commit": 4,
+      "records": 1609376,
+      "rows_inserted": 1609376,
+      "batches_inserting_nothing": 0,
+      "dead_lettered": 0,
+      "active_seconds": 30.5,
+      "records_per_s": 52828,
+      "eos_to_commit_s": {
+        "p50": 21.02,
+        "p95": 24.84,
+        "max": 24.84,
+        "n": 33
+      },
+      "batch_seconds_median": 6.43
+    },
+    "bronze_after_crash": {
+      "rows": 1609376,
+      "distinct_keys": 1609376,
+      "duplicate_rows": 0,
+      "reference_rows": 1725444,
+      "keys_lost": 116068,
+      "keys_added": 0,
+      "payload_differs": 0
+    },
+    "restart": {
+      "batches": 4,
+      "batches_with_bronze_commit": 4,
+      "records": 1985299,
+      "rows_inserted": 1985299,
+      "batches_inserting_nothing": 0,
+      "dead_lettered": 0,
+      "active_seconds": 30.9,
+      "records_per_s": 64330,
+      "eos_to_commit_s": {
+        "p50": 50.39,
+        "p95": 55.45,
+        "max": 55.49,
+        "n": 42
+      },
+      "batch_seconds_median": 5.86
+    },
+    "restart_first_batch_inserted": 499989,
+    "restart_wall_seconds": 74.2,
+    "bronze_final": {
+      "rows": 3594675,
+      "distinct_keys": 3594675,
+      "duplicate_rows": 0,
+      "reference_rows": 3594675,
+      "keys_lost": 0,
+      "keys_added": 0,
+      "payload_differs": 0
+    }
+  },
+  "latency": {
+    "topic": "sg.speedbands.spark-latency-20261015100935",
+    "table": "bronze/speedbands_spark_latency",
+    "speedup": 120.0,
+    "max_sleep_s": 10.0,
+    "exit_code": 0,
+    "producer": {
+      "snapshots": 25,
+      "messages": 3594750,
+      "bytes": 264543707,
+      "duplicates_injected": 0,
+      "delivery_errors": 0,
+      "send_seconds": 18.488799524000115,
+      "paced_sleep_seconds": 221.0,
+      "msgs_per_s": 194429,
+      "mb_per_s": 14.31
+    },
+    "stream": {
+      "batches": 43,
+      "batches_with_bronze_commit": 43,
+      "records": 3594675,
+      "rows_inserted": 3594675,
+      "batches_inserting_nothing": 0,
+      "dead_lettered": 0,
+      "active_seconds": 252.5,
+      "records_per_s": 14237,
+      "eos_to_commit_s": {
+        "p50": 5.56,
+        "p95": 16.43,
+        "max": 18.0,
+        "n": 75
+      },
+      "batch_seconds_median": 3.23
+    },
+    "bronze_final": {
+      "rows": 3594675,
+      "distinct_keys": 3594675,
+      "duplicate_rows": 0,
+      "reference_rows": 3594675,
+      "keys_lost": 0,
+      "keys_added": 0,
+      "payload_differs": 0
+    }
+  }
+}

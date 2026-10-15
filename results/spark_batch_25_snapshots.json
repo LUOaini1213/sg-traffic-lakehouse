@@ -1,0 +1,99 @@
+{
+  "repeats": 3,
+  "spark_session_startup_s": 18.97,
+  "spark_cores": 8,
+  "spark_driver_memory": "3g",
+  "dbt_threads": 4,
+  "duckdb_memory_limit": "1500MB",
+  "rows": {
+    "stg_speedband_obs": 3594675,
+    "dim_snapshot": 25,
+    "gold_link_speed_hourly": 1293678,
+    "gold_congestion_episodes": 11015
+  },
+  "seconds": {
+    "dbt_duckdb": [
+      18.57,
+      6.53,
+      6.44
+    ],
+    "dbt_duckdb_failed": [],
+    "spark_local": [
+      30.26,
+      14.6,
+      12.57
+    ],
+    "spark_per_model": [
+      {
+        "stg_speedband_obs": 12.72,
+        "dim_snapshot": 3.22,
+        "gold_link_speed_hourly": 5.76,
+        "gold_congestion_episodes": 2.76
+      },
+      {
+        "stg_speedband_obs": 5.23,
+        "dim_snapshot": 1.14,
+        "gold_link_speed_hourly": 5.48,
+        "gold_congestion_episodes": 1.63
+      },
+      {
+        "stg_speedband_obs": 4.61,
+        "dim_snapshot": 1.06,
+        "gold_link_speed_hourly": 4.53,
+        "gold_congestion_episodes": 1.46
+      }
+    ]
+  },
+  "median_s": {
+    "dbt_duckdb": 6.53,
+    "spark_local": 14.6
+  },
+  "cutoff": "2026-09-27 19:23:00",
+  "reconcile": {
+    "stg_speedband_obs": {
+      "rows_dbt": 3594675,
+      "rows_spark": 3594675,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "partition_date",
+      "partitions": 2,
+      "partitions_same_digest": 2,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "dim_snapshot": {
+      "rows_dbt": 25,
+      "rows_spark": 25,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "obs_date",
+      "partitions": 2,
+      "partitions_same_digest": 2,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "gold_link_speed_hourly": {
+      "rows_dbt": 1293678,
+      "rows_spark": 1293678,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "hour_of_day",
+      "partitions": 9,
+      "partitions_same_digest": 9,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "gold_congestion_episodes": {
+      "rows_dbt": 11015,
+      "rows_spark": 11015,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "cast(start_ts as date)",
+      "partitions": 2,
+      "partitions_same_digest": 2,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "all_identical": true
+  }
+}

@@ -8,6 +8,7 @@ Mutants tagged "review" are the ones an external review planted in the previous 
 most of them survived that version's tests. They are re-expressed here against the current code.
 
 Run: python tests/mutate.py            (roughly 30-60 minutes: SQL mutants rebuild the fixture with dbt)
+     python tests/mutate.py --spark    (the PySpark mutants below, against tests/test_spark.py; needs pyspark + a JDK)
 """
 import re
 import subprocess
@@ -184,6 +185,39 @@ MUTANTS = [
       "(s2 - s1 * s1 / n_obs) / n_obs"),
 ]
 
+# Planted bugs in the PySpark layer (src/lakehouse/spark_jobs.py, spark_stream.py). Run with --spark; results go to
+# results/mutation_spark.json. Each one changes what Spark computes; tests/test_spark.py must notice.
+SPARK_MUTANTS = [
+    # silver: dedup order, band rules
+    M(PKG / "spark_jobs.py", 'F.col("_ingested_at").asc_nulls_last()', 'F.col("_ingested_at").desc_nulls_last()'),
+    M(PKG / "spark_jobs.py", 'valid = F.col("speed_band").between(1, 8)', 'valid = F.col("speed_band").between(0, 8)'),
+    M(PKG / "spark_jobs.py", 'F.when(F.col("max_speed") == 999, F.lit(None))', 'F.when(F.col("max_speed") == 998, F.lit(None))'),
+    M(PKG / "spark_jobs.py", '        src = src.where(F.col("snapshot_ts") <= F.lit(', '        src = src.where(F.col("snapshot_ts") < F.lit('),
+    # dim_snapshot: sampling runs, day type
+    M(PKG / "spark_jobs.py", 'F.coalesce(F.col("gap_minutes") > F.lit(max_gap_minutes), F.lit(True))',
+      'F.coalesce(F.col("gap_minutes") > F.lit(max_gap_minutes), F.lit(False))'),
+    M(PKG / "spark_jobs.py", "weekend = F.dayofweek(obs_date).isin(1, 7)", "weekend = F.dayofweek(obs_date).isin(6, 7)"),
+    M(PKG / "spark_jobs.py", 'F.when(weekend | F.array_contains(hol, obs_date), "WEEKENDS/HOLIDAY")',
+      'F.when(weekend, "WEEKENDS/HOLIDAY")'),
+    # gold
+    M(PKG / "spark_jobs.py", 'F.countDistinct("obs_date").alias("n_days")', 'F.count("obs_date").alias("n_days")'),
+    M(PKG / "spark_jobs.py", 'o = stg.where(F.col("speed_band").isNotNull())', "o = stg"),
+    M(PKG / "spark_jobs.py", 'F.when(F.col("speed_band") <= congestion_band_max, 1)',
+      'F.when(F.col("speed_band") < congestion_band_max, 1)'),
+    M(PKG / "spark_jobs.py", 'islands.groupBy("link_id", "sampling_run", "island")', 'islands.groupBy("link_id", "island")'),
+    M(PKG / "spark_jobs.py", '.where(F.col("road_category").isin(*road_categories)))', ")"),
+    M(PKG / "spark_jobs.py", """F.date_format("start_ts", "yyyyMMdd'T'HHmm")""", """F.date_format("start_ts", "yyyyMMddHHmm")"""),
+    # streaming sink: dedup, idempotent MERGE, validation
+    M(PKG / "spark_stream.py", 'Window.partitionBy("snapshot_ts", "link_id").orderBy("partition", "offset")',
+      'Window.partitionBy("snapshot_ts", "link_id").orderBy(F.col("offset").desc())'),
+    M(PKG / "spark_stream.py", '        t.alias("t").merge(src.alias("s"), on).whenNotMatchedInsertAll().execute()\n',
+      '        src.write.format("delta").mode("append").save(path)\n'),
+    M(PKG / "spark_stream.py", '.when(F.pmod(link, F.lit(partitions)) != F.col("partition"), "wrong_partition")', ""),
+    M(PKG / "spark_stream.py", "TS_FORMAT = \"yyyy-MM-dd'T'HH:mm:ss\"", "TS_FORMAT = \"yyyy-MM-dd'T'HH:mm:ss[XXX]\""),
+    M(PKG / "spark_stream.py", '.when(F.col("k").isNull() | (F.col("k") != link.cast("string")), "key_does_not_match_link")',
+      '.when(F.col("k").isNull(), "key_does_not_match_link")'),
+]
+
 INVALID_SQL = re.compile(r"Parser Error|Binder Error|Catalog Error|Compilation Error|syntax error", re.I)
 
 
@@ -194,7 +228,50 @@ def pytest(suffix: str):
                           capture_output=True, text=True, cwd=REPO)
 
 
+def spark_main():
+    """Baseline, then every Spark mutant against tests/test_spark.py (which also runs the dbt fixture pipeline)."""
+    import json
+    test = [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", str(REPO / "tests" / "test_spark.py")]
+    base = subprocess.run(test, capture_output=True, text=True, cwd=REPO)
+    assert base.returncode == 0 and "skipped" not in base.stdout.splitlines()[-1], \
+        "tests/test_spark.py must pass (not skip) on the unmodified code\n" + base.stdout[-3000:]
+    n_passed = int(re.search(r"(\d+) passed", base.stdout).group(1))
+    print(f"baseline: {n_passed} Spark tests passed", flush=True)
+    escaped, killed_by = [], {}
+    for mu in SPARK_MUTANTS:
+        f = mu["file"]
+        original_bytes = f.read_bytes()
+        text = original_bytes.decode("utf-8").replace("\r\n", "\n")
+        mutated = text
+        for old, new in mu["pairs"]:
+            assert text.count(old) == 1, f"mutation target not unique in {f.name}: {old[:70]!r}"
+            mutated = mutated.replace(old, new)
+        f.write_bytes(mutated.encode("utf-8"))
+        label = f"{f.name}: {mu['pairs'][0][0].strip()[:80]}"
+        try:
+            c = subprocess.run([sys.executable, "-m", "py_compile", str(f)], capture_output=True)
+            assert c.returncode == 0, f"mutant does not compile, so it proves nothing: {label}"
+            r = subprocess.run(test, capture_output=True, text=True, cwd=REPO)
+        finally:
+            f.write_bytes(original_bytes)
+            assert f.read_bytes() == original_bytes, f"source bytes not restored: {f}"
+        failed = re.findall(r"^(?:FAILED|ERROR) \S+::(\S+)", r.stdout, re.M)
+        killed = r.returncode != 0
+        if killed:
+            killed_by[label] = failed[:1]
+        else:
+            escaped.append(label)
+        print(f"{'killed ' if killed else 'ESCAPED'}  {label}  {failed[:1]}", flush=True)
+    print(f"{len(SPARK_MUTANTS) - len(escaped)}/{len(SPARK_MUTANTS)} Spark mutants killed")
+    out = {"tests_passed": n_passed, "total": len(SPARK_MUTANTS), "killed": len(SPARK_MUTANTS) - len(escaped),
+           "escaped": escaped, "first_failing_test": killed_by}
+    (REPO / "results" / "mutation_spark.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    sys.exit(1 if escaped else 0)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--spark"]:
+        spark_main()
     only = sys.argv[1:]  # optional: run only mutants whose tag or first target contains one of these strings
     # Baseline: the whole suite, including the slow reproducibility test, must pass on the unmodified code.
     base = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], capture_output=True,

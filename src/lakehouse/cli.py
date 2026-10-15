@@ -201,6 +201,44 @@ def cmd_stream_bench(settings, a):
                       for k, v in res.items()}, indent=2))
 
 
+def cmd_spark_batch(settings, a):
+    """The speed-band silver and gold models in PySpark (local mode), then a comparison with the dbt tables."""
+    from . import spark_jobs
+    cutoff = _cutoff(a)
+    if a.bench:
+        res = spark_jobs.bench(settings, cutoff, repeats=a.bench)
+    else:
+        spark = spark_jobs.session("sgtl-batch")
+        t0 = time.perf_counter()
+        try:
+            res = spark_jobs.build(settings, spark, cutoff)
+        finally:
+            spark.stop()
+        res["wall_seconds"] = round(time.perf_counter() - t0, 2)
+    res["cutoff"] = cutoff
+    if a.reconcile:
+        res["reconcile"] = spark_jobs.reconcile(settings)
+    print(json.dumps(res, indent=2, default=str))
+    if a.out:
+        _write(settings, a.out, res)
+    if a.reconcile and not res["reconcile"]["all_identical"]:
+        sys.exit(1)
+
+
+def cmd_spark_stream(settings, a):
+    from . import spark_stream
+    res = spark_stream.run(settings, checkpoint=a.checkpoint, log_path=a.log, table=a.table,
+                           max_offsets_per_trigger=a.max_offsets, idle_exit_s=a.idle_exit, max_seconds=a.max_seconds,
+                           crash_after_batches=a.crash_after_batches, ready_file=a.ready_file)
+    print(json.dumps(res))
+
+
+def cmd_spark_stream_bench(settings, a):
+    from . import spark_stream_bench
+    res = spark_stream_bench.run(settings, until=_ts(a.until), runs=a.runs.split(","))
+    print(json.dumps({k: v for k, v in res.items() if not isinstance(v, dict)}, default=str))
+
+
 def cmd_live(settings, a):
     from . import live
     live.run(settings, a.every, a.count)
@@ -256,12 +294,27 @@ def main(argv=None):
     s.add_argument("--check", action="store_true", help="fail if README.md disagrees with the results files")
     s = sub.add_parser("live", help="fetch live snapshots from DataMall (needs LTA_KEY) and publish them to Kafka")
     s.add_argument("--every", type=float, default=900.0), s.add_argument("--count", type=int, default=1)
+    s = sub.add_parser("spark-batch", help="speed-band silver/gold models in PySpark + Delta (local mode)")
+    s.add_argument("--until"), s.add_argument("--cutoff-utc"), s.add_argument("--out")
+    s.add_argument("--reconcile", action="store_true", help="compare with the dbt tables; exit 1 on any difference")
+    s.add_argument("--bench", type=int, default=0, help="time dbt run and Spark this many times each")
+    s = sub.add_parser("spark-stream", help="Spark Structured Streaming: Kafka topic -> Delta bronze")
+    s.add_argument("--checkpoint", required=True), s.add_argument("--log"), s.add_argument("--ready-file")
+    s.add_argument("--table", default="bronze/speedbands_spark")
+    s.add_argument("--max-offsets", type=int, default=500_000, help="maxOffsetsPerTrigger")
+    s.add_argument("--idle-exit", type=float, default=30.0), s.add_argument("--max-seconds", type=float, default=3600)
+    s.add_argument("--crash-after-batches", type=int, default=0,
+                   help="exit abruptly right after this many Delta commits (crash test)")
+    s = sub.add_parser("spark-stream-bench", help="crash, SIGKILL and paced-latency runs of the Spark stream")
+    s.add_argument("--until"), s.add_argument("--runs", default="crash,sigkill,latency")
     a = p.parse_args(argv)
     settings = config.load()
     {"ingest-batch": cmd_ingest_batch, "ingest-speedbands": cmd_ingest_speedbands, "profile": cmd_profile,
      "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report, "publication": cmd_publication,
      "pipeline": cmd_pipeline, "produce": cmd_produce, "consume": cmd_consume, "repro": cmd_repro,
-     "summarize": cmd_summarize, "live": cmd_live, "stream-bench": cmd_stream_bench}[a.cmd](settings, a)
+     "summarize": cmd_summarize, "live": cmd_live, "stream-bench": cmd_stream_bench,
+     "spark-batch": cmd_spark_batch, "spark-stream": cmd_spark_stream,
+     "spark-stream-bench": cmd_spark_stream_bench}[a.cmd](settings, a)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+# PySpark layer (src/lakehouse/spark_*.py). Needs a JDK 17 or 21 on PATH or in JAVA_HOME. The Delta Lake and Kafka
+# connector jars are fetched from Maven Central by spark.jars.packages on first use.
+-r requirements.txt
+pyspark==4.0.1
+delta-spark==4.0.1

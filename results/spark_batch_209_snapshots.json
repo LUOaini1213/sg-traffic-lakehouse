@@ -1,0 +1,103 @@
+{
+  "repeats": 3,
+  "spark_session_startup_s": 20.3,
+  "spark_cores": 8,
+  "spark_driver_memory": "3g",
+  "dbt_threads": 4,
+  "duckdb_memory_limit": "1500MB",
+  "rows": {
+    "stg_speedband_obs": 30051483,
+    "dim_snapshot": 209,
+    "gold_link_speed_hourly": 4887228,
+    "gold_congestion_episodes": 69220
+  },
+  "seconds": {
+    "dbt_duckdb": [
+      125.11,
+      49.01
+    ],
+    "dbt_duckdb_failed": [
+      {
+        "seconds": 15.79,
+        "error": "Out of Memory Error: could not allocate block of size 256.0 KiB (1.3 GiB/1.3 GiB used)"
+      }
+    ],
+    "spark_local": [
+      74.08,
+      52.61,
+      60.69
+    ],
+    "spark_per_model": [
+      {
+        "stg_speedband_obs": 33.77,
+        "dim_snapshot": 2.36,
+        "gold_link_speed_hourly": 27.37,
+        "gold_congestion_episodes": 4.01
+      },
+      {
+        "stg_speedband_obs": 25.98,
+        "dim_snapshot": 1.43,
+        "gold_link_speed_hourly": 20.94,
+        "gold_congestion_episodes": 3.12
+      },
+      {
+        "stg_speedband_obs": 28.76,
+        "dim_snapshot": 1.44,
+        "gold_link_speed_hourly": 26.36,
+        "gold_congestion_episodes": 2.87
+      }
+    ]
+  },
+  "median_s": {
+    "dbt_duckdb": 87.06,
+    "spark_local": 60.69
+  },
+  "cutoff": "2026-10-03 00:06:00",
+  "reconcile": {
+    "stg_speedband_obs": {
+      "rows_dbt": 30051483,
+      "rows_spark": 30051483,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "partition_date",
+      "partitions": 8,
+      "partitions_same_digest": 8,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "dim_snapshot": {
+      "rows_dbt": 209,
+      "rows_spark": 209,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "obs_date",
+      "partitions": 8,
+      "partitions_same_digest": 8,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "gold_link_speed_hourly": {
+      "rows_dbt": 4887228,
+      "rows_spark": 4887228,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "hour_of_day",
+      "partitions": 24,
+      "partitions_same_digest": 24,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "gold_congestion_episodes": {
+      "rows_dbt": 69220,
+      "rows_spark": 69220,
+      "only_in_dbt": 0,
+      "only_in_spark": 0,
+      "partition_column": "cast(start_ts as date)",
+      "partitions": 7,
+      "partitions_same_digest": 7,
+      "partitions_differ": [],
+      "identical": true
+    },
+    "all_identical": true
+  }
+}

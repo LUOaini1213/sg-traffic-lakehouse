@@ -10,6 +10,7 @@ missing, or if its tasks or their order differ from the pipeline's.
 """
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 import tempfile
@@ -26,7 +27,10 @@ def _dagbag(folder: Path):
         from airflow.dag_processing.dagbag import DagBag  # Airflow 3.1+
     except ImportError:  # pragma: no cover - older layout
         from airflow.models.dagbag import DagBag
-    return DagBag(dag_folder=str(folder), include_examples=False)
+    kw = {"dag_folder": str(folder)}
+    if "include_examples" in inspect.signature(DagBag.__init__).parameters:  # gone in Airflow 3.3's DagBag
+        kw["include_examples"] = False
+    return DagBag(**kw)
 
 
 def problems(folder: Path) -> list[str]:

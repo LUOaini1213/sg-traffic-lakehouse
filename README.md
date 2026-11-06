@@ -1,9 +1,22 @@
 # sg-traffic-lakehouse
 
+[![ci](https://github.com/LUOaini1213/sg-traffic-lakehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/LUOaini1213/sg-traffic-lakehouse/actions/workflows/ci.yml)
+
 A lakehouse pipeline for Singapore land-transport data that runs on one machine. It covers streaming and batch
 ingest into Delta Lake tables, a bronze/silver/gold (medallion) layout, dbt models and tests, data-quality checks,
 an Airflow DAG and a reproducibility check. A PySpark layer re-implements the speed-band silver and gold models
 and the Kafka-to-bronze sink (Structured Streaming); its outputs are reconciled row for row with the dbt tables.
+
+## Results at a glance
+
+<!-- glance:start -->
+- **Crash-tested streaming sink.** 3 Kafka consumers exited abruptly after their 5th Delta write, before committing offsets, and were restarted while a file backfill wrote the same snapshots. Bronze ended with 3,594,675 rows (3,594,675 expected from the source files) and 0 duplicate keys ([`stream_benchmark.json`](results/stream_benchmark.json)).
+- **Byte-reproducible gold.** Two pipeline runs from empty buckets wrote the same Parquet bytes for 5/5 gold tables and the same content for 5/5 ([`reproducibility.json`](results/reproducibility.json)).
+- **Two engines, one answer.** PySpark versions of 4 speed-band models equal the dbt tables row for row on 3,594,675 and 30,051,483 observations: 0 rows found on one side only ([`spark_batch_25_snapshots.json`](results/spark_batch_25_snapshots.json), [`spark_batch_209_snapshots.json`](results/spark_batch_209_snapshots.json)).
+- **Spark Structured Streaming sink.** After a crash between the Delta commit and Spark's commit log, and after a SIGKILL, the final tables lost 0 keys and held 0 duplicate keys. Paced end-of-snapshot latency p50: 5.56 s, against 1.9 s for the Python consumer ([`spark_stream.json`](results/spark_stream.json)).
+- **Tests.** 167 pytest tests pass and 79/79 planted bugs are killed; the Spark layer has 9 tests and 18/18 planted bugs in the Spark code killed. CI reruns both and fails if these committed counts differ from its run ([`mutation.json`](results/mutation.json), [`mutation_spark.json`](results/mutation_spark.json)).
+- **Limits.** One laptop, with Docker stand-ins for S3 and Kafka. 25 recorded speed-band snapshots (one Saturday evening, one Sunday) are replayed; this is not a live feed. The full-data timings date from 2026-09-28 (Spark: 2026-10-15) and were not rerun after the publication rewrite. More under [Limits](#limits).
+<!-- glance:end -->
 
 The data comes from LTA DataMall:
 
@@ -74,7 +87,10 @@ Code map:
 
 ## How to run
 
-All commands run in WSL/Linux from the repository root, with Python 3.12.
+All commands run in WSL/Linux from the repository root, with Python 3.12 (the pinned numpy 2.5.3 needs 3.12 or
+later; CI uses 3.12). On Windows without `make` or WSL, the fixture tests also run natively:
+`python -m pytest -q` after `pip install -r requirements.txt` in an activated Python 3.12 virtual environment
+(`.venv\Scripts\activate`; the tests call the `dbt` executable, so it must be on `PATH`).
 
 ### On the synthetic fixture (no Docker, what CI runs)
 
@@ -99,10 +115,51 @@ The fixture (`tests/fixtures`, written by `tests/make_fixture.py`) is synthetic.
 The end-to-end tests check the gold tables against values worked out by hand. They also plant a duplicate key in
 bronze with a raw append that bypasses the MERGE, and check that silver keeps the first copy.
 
-### Full local stack on the real data
+### Getting the data
 
-The real DataMall files are read from the `sg-bus-network-monitor` repository (`SOURCE_DIR` in `.env`) and are
-not copied into this repository.
+The real-data runs read LTA DataMall files from one folder, `SOURCE_DIR` in `.env`. They are not in this
+repository, and not in [sg-bus-network-monitor](https://github.com/LUOaini1213/sg-bus-network-monitor) either: its
+fetch scripts write them to its `data/raw/datamall/` folder, which it does not commit. `.env.example` expects that
+repository cloned next to this one. Its README lists the fetch commands; they need a free DataMall account key in
+`LTA_KEY`:
+
+```bash
+git clone https://github.com/LUOaini1213/sg-bus-network-monitor ../sg-bus-network-monitor
+cd ../sg-bus-network-monitor
+LTA_KEY=... python src/datamall.py static pv          # BusStops/BusServices/BusRoutes_<date>.json, stop volumes
+LTA_KEY=... python src/datamall.py od 202608 202607   # origin-destination volumes
+LTA_KEY=... python src/collect.py run --until <YYYYmmddHHMM>   # speed-band snapshots, speedbands/sb_*.csv.gz
+```
+
+In that repository, `src/cloud_inputs.py` builds `speedband_links.csv` (the link metadata) from the collector's
+`speedband_links.csv.gz`.
+
+**A new download will not reproduce the numbers below.** Speed-band snapshots are point-in-time, so the
+2026-09-26/27 snapshots cannot be fetched again, and DataMall serves passenger volumes for recent months only.
+The measurements used these files:
+
+<!-- inputs:start -->
+| File (under `SOURCE_DIR`) | Rows | SHA-256 (first 16 hex digits) |
+|---|---|---|
+| `transport_node_bus_202602.csv` | 203,124 | `75c75608cde1ae9e` |
+| `transport_node_bus_202606.csv` | 202,740 | `05a29045dcc22339` |
+| `transport_node_bus_202607.csv` | 203,100 | `95b7c4b458f11131` |
+| `transport_node_bus_202608.csv` | 203,480 | `fe78b4f0a0c9d467` |
+| `origin_destination_bus_202607.csv` | 5,932,843 | `878caf8c414a1281` |
+| `origin_destination_bus_202608.csv` | 6,120,164 | `00735e24e141ece2` |
+| `speedband_links.csv` | 143,787 | `a5ac603de36d7888` |
+| `BusStops_20260926.json` | 5,209 | `9efbea4f3bf14678` |
+| `BusServices_20260926.json` | 802 | `fd9e0d258f80298c` |
+| `BusRoutes_20260926.json` | 26,842 | `f2eb14d9e275f60e` |
+
+Plus 25 speed-band snapshots in `speedbands/`, `sb_20260926_1928.csv.gz` to `sb_20260927_1923.csv.gz`, 3,594,675 rows in total. Full hashes: [`batch_ingest.json`](results/batch_ingest.json) and [`speedband_files.json`](results/speedband_files.json).
+<!-- inputs:end -->
+
+`python -m lakehouse inputs` hashes the files under `SOURCE_DIR` and lists each one as `match`, `differs` or
+`missing` against these hashes. It exits 1 unless all of them match. The synthetic fixture path above needs no
+download and is fully reproducible.
+
+### Full local stack on the real data
 
 ```bash
 cp .env.example .env          # local MinIO credentials and paths
@@ -118,18 +175,15 @@ make down
 `UNTIL=YYYYmmddHHMM` (Singapore time) pins the set of speed-band snapshots used in silver and gold, even when
 bronze already contains later snapshots from streaming or a later run. File backfill uses the same cutoff;
 bronze keeps newer data and its profile still describes the full stored lake. The Airflow DAG takes the cutoff from the run's `data_interval_end`;
-`make airflow` triggers a run whose logical date is `UNTIL`. The optional live mode (`python -m lakehouse live`)
+`make airflow` triggers a run whose logical date is `UNTIL`. A bounded transformation on its own:
+`python -m lakehouse dbt --until 202609050820 build` (the cutoff goes before the dbt command; an invocation without
+one clears any inherited cutoff). The optional live mode (`python -m lakehouse live`)
 reads a DataMall key from `LTA_KEY` at run time. It was not run for this README.
 
 ## Measured results
 
-Publication now stages all five tables and the report before activating one manifest. A failed third-table
-write leaves the previous complete cohort readable. Use `python -m lakehouse publication --verify` to inspect
-the authoritative ledger; local JSON files are convenience receipts. See [publication and reader semantics](docs/PUBLICATION.md)
-for upgrades, failure handling and retention. This correctness change has not rerun the full-data timings below.
-
-The generated block below preserves the full-data measurements from 2026-09-28. It has not been rerun for the
-2026-10-03 reliability fixes; the current fixture validation is described separately below.
+Full-data measurements from 2026-09-28, except the Tests subsection, which CI re-measures on every push (notes
+after the block).
 
 <!-- results:start -->
 _Generated by `python -m lakehouse summarize` from the files in `results/`; do not edit by hand._
@@ -241,41 +295,24 @@ The two runs built bronze speed bands from the snapshot files. In the main pipel
 
 ### Tests
 
-- 102 pytest tests pass on the unmodified code: unit tests (including the consumer against an in-memory broker, killed right after its n-th bronze write for several n), the end-to-end fixture run (whose dbt build runs 90 dbt tests) and the fixture reproducibility check.
-- Mutation check: 65/65 planted bugs killed (51 in Python, 14 in dbt SQL; 10 of them are the mutants an external review added).
+- 167 pytest tests pass on the unmodified code: unit tests (including the consumer against an in-memory broker, killed right after its n-th bronze write for several n), the end-to-end fixture run (whose dbt build runs 90 dbt tests) and the fixture reproducibility check.
+- Mutation check: 79/79 planted bugs killed (64 in Python, 15 in dbt SQL; 24 of them are the mutants an external review added).
 <!-- results:end -->
+
+Notes on these measurements:
+
+- The full-data numbers were not rerun after the 2026-10-03 reliability fixes
+  ([docs/RELIABILITY_REVIEW_2026-10-03.md](docs/RELIABILITY_REVIEW_2026-10-03.md)) or after the publication rewrite
+  of 2026-10-12.
+- Publication now stages all five tables and the report before activating one manifest. A failed third-table
+  write leaves the previous complete cohort readable. Use `python -m lakehouse publication --verify` to inspect
+  the authoritative ledger; local JSON files are convenience receipts. See
+  [publication and reader semantics](docs/PUBLICATION.md) for upgrades, failure handling and retention.
+- The Tests subsection comes from `results/mutation.json`. CI runs the whole suite and the mutation check on every
+  push and fails if the counts it measures differ from that file.
 
 The static report with charts from the gold layer is `results/report.html`. The data-quality details are in
 `results/quality_report.md`, and the bronze profile is in `results/profile_bronze.md`.
-
-## Reliability review (2026-10-03)
-
-Three defects were reproduced against the previous implementation and fixed:
-
-- **Repeated invalid timestamps could stop consumption after every restart.** A rejected timestamp with a time
-  zone was cached before validation. Its next copy bypassed validation and crashed when compared with the naive
-  Singapore event times. Only validated timestamps now enter the cache. Tests use the real consumer with an
-  in-memory broker and local Delta tables: repeated bad records and end markers go to dead letter, valid records
-  persist, and a crash before offset commit can replay without duplicating either sink.
-- **A historical cutoff ignored newer data already in bronze.** Previously it only limited file discovery.
-  The CLI now passes the same normalized cutoff into dbt, and the staging model filters before deduplication or
-  aggregation. Airflow passes its existing cutoff to the transform task as well as ingest and quality.
-  A fixture test first stores all ten snapshots, rebuilds at 08:20 (24 observations, two snapshots and 23
-  known-band observations in gold), then rebuilds without a cutoff (120 observations). Bronze is unchanged.
-- **OD reconciliation could pass incomplete comparisons.** An inner join hid a missing day type, and zero tap-ins
-  with positive OD trips became a zero difference. Shared months now compare the union of their day types;
-  missing groups and undefined ratios fail explicitly and retain both totals in the report. Zero versus zero
-  passes. Products with different month coverage are still compared only on their common months.
-
-Standalone bounded transformation: `python -m lakehouse dbt --until 202609050820 build`. Put the cutoff before
-the dbt command; Airflow uses `--cutoff-utc` in the same position. An unbounded invocation explicitly clears any
-inherited cutoff. The new consumer and quality tests are offline; they do not re-establish the historical
-throughput measurements or prove behavior on a live distributed cluster.
-
-Current local regression: **123 pytest tests pass**, including fixture dbt builds and the two-run reproducibility
-check. The standalone fixture pipeline and archived README consistency check also pass. All six new mutations
-were killed locally. The complete harness now has 71 mutants and runs the bounded dbt test for SQL mutations;
-the archived 65/65 measurement above describes the previous version, not the expanded suite.
 
 ## Apache Spark layer (2026-10-15)
 
@@ -305,6 +342,7 @@ dbt time is `dbt run --select` on the four models (DuckDB, 4 threads, the reposi
 no JVM running. Spark time is three builds in one session, each model written as a Delta table and read back, as
 dbt materialises tables. Session start-up is counted separately.
 
+<!-- spark-batch:start -->
 | Input | Model | Rows (dbt = Spark) | Rows on one side only | Partitions with equal digest |
 |---|---|---|---|---|
 | 25 snapshots (to 2026-09-27 19:23) | stg_speedband_obs | 3,594,675 | 0 / 0 | 2/2 (date) |
@@ -321,7 +359,8 @@ The two engines produced identical tables on both inputs, including the rounded 
 | Input | dbt-duckdb runs | Spark runs (start-up) |
 |---|---|---|
 | 3.6 M observations | 18.57 s, 6.53 s, 6.44 s | 30.26 s, 14.60 s, 12.57 s (18.97 s) |
-| 30.1 M observations | 125.11 s, 49.01 s; a third run failed after 15.79 s: DuckDB out of memory at its 1,500 MB limit | 74.08 s, 52.61 s, 60.69 s (20.3 s) |
+| 30.1 M observations | 125.11 s, 49.01 s; a third run failed after 15.79 s: DuckDB out of memory at its 1,500 MB limit | 74.08 s, 52.61 s, 60.69 s (20.30 s) |
+<!-- spark-batch:end -->
 
 - On 3.6 M rows DuckDB was about twice as fast as Spark.
 - On 30.1 M rows the two were in the same range, and Spark finished all three runs. One of the three dbt runs failed
@@ -331,14 +370,17 @@ The two engines produced identical tables on both inputs, including the rounded 
 
 ### Streaming: crash and restart on Redpanda
 
-`spark-stream-bench` replays the 25 snapshots: 3,594,750 messages, including 75 end-of-snapshot markers, on 3
-partitions. `maxOffsetsPerTrigger` is 500,000. Each run has its own topic, checkpoint and table. Each final table is
-compared with the bronze table that the file backfill wrote from the same files.
+<!-- spark-stream:start -->
+`spark-stream-bench` replays the 25 snapshots: 3,594,750 messages, including 75 end-of-snapshot markers, on 3 partitions. `maxOffsetsPerTrigger` is 500,000. Each run has its own topic, checkpoint and table. Each final table is compared with the bronze table that the file backfill wrote from the same files.
 
 | Run | Fault | Stored before restart | Restart | Final rows | Keys lost | Duplicate keys | Payload differs |
 |---|---|---|---|---|---|---|---|
 | crash | `os._exit(70)` right after the 3rd Delta commit, before Spark records the batch as done | 1,431,340 | 6 batches; the first (499,989 records, a replay of the 3rd) inserted 0 rows | 3,594,675 | 0 | 0 | 0 |
 | sigkill | `SIGKILL` to the driver's process group (Python and JVM) 1.5 s after the 4th batch was logged | 1,609,376 | 4 batches; the first inserted 499,989 rows (the killed batch had not committed) | 3,594,675 | 0 | 0 | 0 |
+
+- Unpaced, the sink took 46,768 and 52,828 records/s before the faults and 64,330 to 65,777 records/s after the restarts, while a backlog was waiting. Records/s run from the first batch's start to the last commit.
+- Paced replay (×120, as in the Python consumer's latency run): 43 micro-batches with a median of 3.23 s each; 0 keys lost and 0 duplicated. Latency from a partition's end-of-snapshot marker (producer timestamp) to the end of the Delta commit that contains it, over 75 markers: **p50 5.56 s, p95 16.43 s, max 18.0 s**. The Python consumer measured 1.9 / 4.5 / 4.9 s in its own run (above). In this setup, Spark's micro-batches add latency.
+<!-- spark-stream:end -->
 
 - The two runs cover both crash points. In the first, the Delta commit is done and Spark's commit log is not, so
   Spark replays a batch that is already stored and the MERGE inserts nothing. In the second, the process died
@@ -388,7 +430,10 @@ Results: `results/spark_batch_25_snapshots.json`, `results/spark_batch_209_snaps
   - Speed bands are written with an insert-only MERGE (below). A monthly reload is one overwrite with a predicate
     on its month (`replaceWhere`). A load that fails half-way commits nothing: the month keeps its old rows, and
     a test makes the writer fail after its first batch to check this.
-  - Gold is published the same way, one overwrite commit per table.
+  - Gold is not overwritten in place. Each publication writes all five tables under a new immutable prefix,
+    `gold/releases/<release-id>/<table>` (`mode="error"`, so an existing release is never replaced), verifies them,
+    and only then activates them together with one commit to the `gold/_publication` Delta ledger. Readers resolve
+    `gold/<table>` through the manifest they captured. See [publication and reader semantics](docs/PUBLICATION.md).
   - Why Delta rather than Iceberg: delta-rs needs nothing but the object store, because the transaction log sits
     next to the data. pyiceberg commits through a catalog, which would have been one more service to run.
     DuckDB reads both formats.

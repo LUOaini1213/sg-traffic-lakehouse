@@ -1,11 +1,11 @@
 {
-  "tests_passed": 102,
+  "tests_passed": 167,
   "dbt_tests": 90,
-  "total": 65,
-  "killed": 65,
-  "python": 51,
-  "sql": 14,
-  "reviewer": 10,
-  "reviewer_killed": 10,
+  "total": 79,
+  "killed": 79,
+  "python": 64,
+  "sql": 15,
+  "reviewer": 24,
+  "reviewer_killed": 24,
   "escaped": []
 }

@@ -8,7 +8,8 @@ FIXTURE_ENV = SOURCE_DIR=$(CURDIR)/tests/fixtures/raw/datamall SNAPSHOT_MIN_AGE_
 STACK_ENV = set -a && . ./.env && set +a && export RESULTS_DIR=$(CURDIR)/results
 UNTIL ?= 202609271923
 
-.PHONY: fixture test fixture-pipeline mutate ci up down stream pipeline repro airflow docs summary \n	spark-test spark-mutate spark-batch spark-stream-bench
+.PHONY: fixture test fixture-pipeline mutate ci up down stream pipeline repro airflow docs summary inputs \
+	spark-test spark-mutate spark-batch spark-stream-bench
 
 fixture:            ## regenerate the synthetic fixture
 	$(PY) tests/make_fixture.py
@@ -45,8 +46,11 @@ airflow:            ## start Airflow, trigger the DAG and wait for it
 docs:               ## dbt docs (catalogue + lineage) and docs/CATALOG.md
 	$(STACK_ENV) && $(PY) -m lakehouse dbt docs generate --static && $(PY) tools/catalog.py
 
-summary:            ## results/SUMMARY.md and the generated block in README.md
+summary:            ## results/SUMMARY.md and the generated blocks in README.md
 	$(STACK_ENV) && $(PY) -m lakehouse summarize --update-readme
+
+inputs:             ## compare the files under SOURCE_DIR with the inputs the results were measured on
+	$(STACK_ENV) && $(PY) -m lakehouse inputs
 
 # --- PySpark layer (pip install -r requirements-spark.txt; needs a JDK 17+) ---------------------------------------
 spark-test:         ## Spark models vs dbt on the fixture, streaming sink

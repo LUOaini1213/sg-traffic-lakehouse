@@ -1,11 +1,23 @@
-"""Build results/SUMMARY.md from the results files, and keep the README's results block identical to it.
+"""Build results/SUMMARY.md from the results files, and keep the README's generated blocks identical to them.
 
-Every number in the README's "Measured results" section comes from this generator, so it cannot drift from the
-files the pipeline wrote. `--check` (run in CI) fails if README.md and the results files disagree.
+The README has several generated blocks, each between `<!-- name:start -->` and `<!-- name:end -->`:
+
+- `glance`: the results at a glance on the first screen;
+- `inputs`: the real-data input files with their row counts and SHA-256;
+- `results`: the "Measured results" section (also written to results/SUMMARY.md);
+- `spark-batch` and `spark-stream`: the Spark tables.
+
+Every number in them comes from this generator, so it cannot drift from the files the pipeline wrote. The
+hand-written prose outside the blocks also mentions test and mutant counts; `--check` checks every such count
+against results/mutation.json and results/mutation_spark.json, and checks those two files against the mutants
+defined in tests/mutate.py. CI reruns the tests and both mutation checks and fails if the committed mutation files
+differ from what it measured. `--check` (run in CI) fails if README.md and the results files disagree.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -249,22 +261,304 @@ def build(res: Path) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+def _link(name: str) -> str:
+    return f"[`{name}`](results/{name})"
+
+
+def _f2(x) -> str:
+    return f"{x:.2f} s"
+
+
+_ORDINAL = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th", 6: "6th"}
+
+
+_WORD = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
+
+
+def _dec(x) -> str:
+    """At least one decimal: 18.0 stays 18.0, 16.43 stays 16.43."""
+    t = f"{x:g}"
+    return t if "." in t or "e" in t else f"{x:.1f}"
+
+
+def _ord(n) -> str:
+    return _ORDINAL.get(n, f"{n}th")
+
+
+def build_glance(res: Path) -> str:
+    """The results at a glance: the measured findings, each linked to its results file, and the main limits."""
+    out = []
+    files, sb = _load(res, "speedband_files.json"), _load(res, "stream_benchmark.json")
+    if files and sb:
+        snaps = files["snapshots"]
+        expected = sum(s["source_rows"] - s["rows_quarantined"] - s["duplicate_rows_in_file"] for s in snaps)
+        cr = sb["crash"]
+        out.append(f"- **Crash-tested streaming sink.** {len(cr['first_exit_codes'])} Kafka consumers exited abruptly "
+                   f"after their {_ord(cr['crash_after_writes'])} Delta write, before committing offsets, and were "
+                   f"restarted while a file backfill wrote the same snapshots. Bronze ended with "
+                   f"{_n(cr['bronze_final']['rows'])} rows ({_n(expected)} expected from the source files) and "
+                   f"{_n(cr['bronze_final']['duplicate_rows'])} duplicate keys ({_link('stream_benchmark.json')}).")
+    rp = _load(res, "reproducibility.json")
+    if rp:
+        t = list(rp["tables"].values())
+        out.append(f"- **Byte-reproducible gold.** Two pipeline runs from empty buckets wrote the same Parquet bytes "
+                   f"for {sum(v['file_sha256_equal'] for v in t)}/{len(t)} gold tables and the same content for "
+                   f"{sum(v['content_sha256_equal'] for v in t)}/{len(t)} ({_link('reproducibility.json')}).")
+    sbs = [(n, _load(res, n)) for n in ("spark_batch_25_snapshots.json", "spark_batch_209_snapshots.json")]
+    sbs = [(n, d) for n, d in sbs if d]
+    if sbs:
+        recs = [r for _, d in sbs for r in d["reconcile"].values() if isinstance(r, dict)]
+        one_side = sum(r["only_in_dbt"] + r["only_in_spark"] for r in recs)
+        models = len([r for r in sbs[0][1]["reconcile"].values() if isinstance(r, dict)])
+        obs = " and ".join(_n(d["rows"]["stg_speedband_obs"]) for _, d in sbs)
+        out.append(f"- **Two engines, one answer.** PySpark versions of {models} speed-band models equal the dbt "
+                   f"tables row for row on {obs} observations: {_n(one_side)} rows found on one side only "
+                   f"({', '.join(_link(n) for n, _ in sbs)}).")
+    ss = _load(res, "spark_stream.json")
+    if ss and sb:
+        runs = [ss[k]["bronze_final"] for k in ("crash", "sigkill") if k in ss]
+        lat, py = ss["latency"]["stream"]["eos_to_commit_s"], sb["latency"]["consumer"]["eos_to_write_ms"]
+        out.append(f"- **Spark Structured Streaming sink.** After a crash between the Delta commit and Spark's "
+                   f"commit log, and after a SIGKILL, the final tables lost {_n(sum(r['keys_lost'] for r in runs))} "
+                   f"keys and held {_n(sum(r['duplicate_rows'] for r in runs))} duplicate keys. Paced end-of-snapshot "
+                   f"latency p50: {lat['p50']:g} s, against {py['p50'] / 1000:.1f} s for the Python consumer "
+                   f"({_link('spark_stream.json')}).")
+    mu, ms = _load(res, "mutation.json"), _load(res, "mutation_spark.json")
+    if mu and ms:
+        out.append(f"- **Tests.** {mu['tests_passed']} pytest tests pass and {mu['killed']}/{mu['total']} planted bugs "
+                   f"are killed; the Spark layer has {ms['tests_passed']} tests and "
+                   f"{ms['killed']}/{ms['total']} planted bugs in the Spark code killed. CI reruns both and fails if these committed counts differ from its "
+                   f"run ({_link('mutation.json')}, {_link('mutation_spark.json')}).")
+    if files:
+        out.append(f"- **Limits.** One laptop, with Docker stand-ins for S3 and Kafka. {len(files['snapshots'])} "
+                   f"recorded speed-band snapshots (one Saturday evening, one Sunday) are replayed; this is not a live "
+                   f"feed. The full-data timings date from 2026-09-28 (Spark: 2026-10-15) and were not rerun after the "
+                   f"publication rewrite. More under [Limits](#limits).")
+    return "\n".join(out) + "\n"
+
+
+def build_inputs(res: Path) -> str:
+    """The real-data files the measurements used, so that a new download can be compared with them."""
+    loads, files = _load(res, "batch_ingest.json"), _load(res, "speedband_files.json")
+    if not (loads and files):
+        return ""
+    out = ["| File (under `SOURCE_DIR`) | Rows | SHA-256 (first 16 hex digits) |", "|---|---|---|"]
+    for x in loads["loads"]:
+        out.append(f"| `{x['file']}` | {_n(x['source']['rows'])} | `{x['sha256'][:16]}` |")
+    snaps = files["snapshots"]
+    out += ["", f"Plus {len(snaps)} speed-band snapshots in `speedbands/`, `{snaps[0]['file']}` to "
+                f"`{snaps[-1]['file']}`, {_n(sum(s['source_rows'] for s in snaps))} rows in total. Full hashes: "
+                f"{_link('batch_ingest.json')} and {_link('speedband_files.json')}."]
+    return "\n".join(out) + "\n"
+
+
+_PART_LABEL = {"partition_date": "date", "obs_date": "date", "hour_of_day": "hour",
+               "cast(start_ts as date)": "start date"}
+
+
+def _mb(limit: str) -> str:
+    m = re.fullmatch(r"(\d+)\s*MB", limit)
+    return f"{int(m.group(1)):,} MB" if m else limit
+
+
+def build_spark_batch(res: Path) -> str:
+    runs = [d for d in (_load(res, "spark_batch_25_snapshots.json"), _load(res, "spark_batch_209_snapshots.json"))
+            if d]
+    if not runs:
+        return ""
+    out = ["| Input | Model | Rows (dbt = Spark) | Rows on one side only | Partitions with equal digest |",
+           "|---|---|---|---|---|"]
+    for i, d in enumerate(runs):
+        models = [(k, r) for k, r in d["reconcile"].items() if isinstance(r, dict)]
+        for j, (k, r) in enumerate(models):
+            label = f"{d['rows']['dim_snapshot']} snapshots (to {d['cutoff'][:16]})" if j == 0 else ""
+            rows = (_n(r["rows_dbt"]) if r["rows_dbt"] == r["rows_spark"]
+                    else f"{_n(r['rows_dbt'])} / {_n(r['rows_spark'])}")
+            part = f"{r['partitions_same_digest']}/{r['partitions']}"
+            if i == 0:
+                part += f" ({_PART_LABEL.get(r['partition_column'], r['partition_column'])})"
+            first = f"| {label} |" if label else "| |"
+            out.append(f"{first} {k} | {rows} | {r['only_in_dbt']} / {r['only_in_spark']} | {part} |")
+    same = all(d["reconcile"].get("all_identical") for d in runs)
+    out += ["", ("The two engines produced identical tables on both inputs, including the rounded averages."
+                 if same else "The two engines did NOT produce identical tables; see the rows above."), "",
+            "| Input | dbt-duckdb runs | Spark runs (start-up) |", "|---|---|---|"]
+    for d in runs:
+        sec = d["seconds"]
+        dbt = ", ".join(_f2(x) for x in sec["dbt_duckdb"])
+        for k, f in enumerate(sec["dbt_duckdb_failed"]):
+            what = (f"DuckDB out of memory at its {_mb(d['duckdb_memory_limit'])} limit"
+                    if "Out of Memory" in f["error"] else f["error"])
+            nth = _WORD.get(len(sec["dbt_duckdb"]) + k + 1, "further")
+            dbt += f"; a {nth} run failed after {_f2(f['seconds'])}: {what}"
+        spark = ", ".join(_f2(x) for x in sec["spark_local"])
+        out.append(f"| {d['rows']['stg_speedband_obs'] / 1e6:.1f} M observations | {dbt} | {spark} "
+                   f"({_f2(d['spark_session_startup_s'])}) |")
+    return "\n".join(out) + "\n"
+
+
+def build_spark_stream(res: Path) -> str:
+    ss, sb = _load(res, "spark_stream.json"), _load(res, "stream_benchmark.json")
+    if not ss:
+        return ""
+    cr, sk, lat = ss["crash"], ss["sigkill"], ss["latency"]
+    out = [f"`spark-stream-bench` replays the {ss['snapshots']} snapshots: {_n(cr['producer']['messages'])} messages, "
+           f"including {ss['snapshots'] * ss['partitions']} end-of-snapshot markers, on {ss['partitions']} partitions. "
+           f"`maxOffsetsPerTrigger` is {_n(ss['max_offsets_per_trigger'])}. Each run has its own topic, checkpoint "
+           f"and table. Each final table is compared with the bronze table that the file backfill wrote from the "
+           f"same files.", "",
+           "| Run | Fault | Stored before restart | Restart | Final rows | Keys lost | Duplicate keys "
+           "| Payload differs |",
+           "|---|---|---|---|---|---|---|---|"]
+    for name, r in (("crash", cr), ("sigkill", sk)):
+        rs = r["restart"]
+        if name == "crash":
+            fault = (f"`os._exit({r['first_exit_code']})` right after the {_ord(r['crash_after_batches'])} Delta "
+                     f"commit, before Spark records the batch as done")
+            restart = (f"{rs['batches']} batches; the first ({_n(rs['records'] - rs['rows_inserted'])} records, a "
+                       f"replay of the {_ord(r['crash_after_batches'])}) inserted "
+                       f"{_n(r['restart_first_batch_inserted'])} rows")
+        else:
+            fault = (f"`SIGKILL` to the driver's process group (Python and JVM) 1.5 s after the "
+                     f"{_ord(r['killed_after_logged_batches'])} batch was logged")
+            restart = (f"{rs['batches']} batches; the first inserted {_n(r['restart_first_batch_inserted'])} rows "
+                       f"(the killed batch had not committed)")
+        f = r["bronze_final"]
+        out.append(f"| {name} | {fault} | {_n(r['bronze_after_crash']['rows'])} | {restart} | {_n(f['rows'])} | "
+                   f"{_n(f['keys_lost'])} | {_n(f['duplicate_rows'])} | {_n(f['payload_differs'])} |")
+    before = [cr["first_process"]["records_per_s"], sk["first_process"]["records_per_s"]]
+    after = sorted([cr["restart"]["records_per_s"], sk["restart"]["records_per_s"]])
+    st, lf = lat["stream"], lat["bronze_final"]
+    e = st["eos_to_commit_s"]
+    paced = (f"- Paced replay (×{lat['speedup']:g}, as in the Python consumer's latency run): {st['batches']} "
+             f"micro-batches with a median of {st['batch_seconds_median']:g} s each; {_n(lf['keys_lost'])} keys lost "
+             f"and {_n(lf['duplicate_rows'])} duplicated. Latency from a partition's end-of-snapshot marker (producer "
+             f"timestamp) to the end of the Delta commit that contains it, over {e['n']} markers: "
+             f"**p50 {_dec(e['p50'])} s, p95 {_dec(e['p95'])} s, max {_dec(e['max'])} s**.")
+    if sb:
+        py = sb["latency"]["consumer"]["eos_to_write_ms"]
+        paced += (" The Python consumer measured " + " / ".join(f"{py[k] / 1000:.1f}" for k in ("p50", "p95", "max"))
+                  + " s in its own run (above). In this setup, Spark's micro-batches add latency.")
+    out += ["",
+            f"- Unpaced, the sink took {_n(before[0])} and {_n(before[1])} records/s before the faults and "
+            f"{_n(after[0])} to {_n(after[1])} records/s after the restarts, while a backlog was waiting. Records/s "
+            f"run from the first batch's start to the last commit.",
+            paced]
+    return "\n".join(out) + "\n"
+
+
+# name -> builder; README.md holds each one between <!-- name:start --> and <!-- name:end -->
+BLOCKS = {"glance": build_glance, "inputs": build_inputs, "results": build, "spark-batch": build_spark_batch,
+          "spark-stream": build_spark_stream}
+
+
+def _markers(name: str) -> tuple[str, str]:
+    return f"<!-- {name}:start -->", f"<!-- {name}:end -->"
+
+
+def harness_counts(path: Path = REPO / "tests" / "mutate.py") -> dict:
+    """Mutant counts from the mutation harness itself (it runs mutants only under __main__)."""
+    spec = importlib.util.spec_from_file_location("_mutate_harness", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mus, sms = mod.MUTANTS, mod.SPARK_MUTANTS
+    return {"total": len(mus), "python": sum(m["file"].suffix == ".py" for m in mus),
+            "sql": sum(m["file"].suffix == ".sql" for m in mus),
+            "reviewer": sum(m["tag"].startswith("review") for m in mus),
+            "spark_total": len(sms), "spark_batch": sum(m["file"].name == "spark_jobs.py" for m in sms),
+            "spark_stream": sum(m["file"].name == "spark_stream.py" for m in sms)}
+
+
+def count_problems(readme: str, res: Path, harness: dict | None = None) -> list[str]:
+    """Test and mutant counts written anywhere in the README must equal the mutation files, and those files must
+    match the harness. The phrases the README uses are required to be present, so that rewording a sentence cannot
+    silently drop it from the check."""
+    mu, ms = _load(res, "mutation.json"), _load(res, "mutation_spark.json")
+    if not mu or not ms:
+        return ["results/mutation.json or results/mutation_spark.json is missing"]
+    h = harness or harness_counts()
+    bad = []
+    for k in ("total", "python", "sql", "reviewer"):
+        if mu[k] != h[k]:
+            bad.append(f"results/mutation.json {k}={mu[k]} but tests/mutate.py defines {h[k]}; rerun tests/mutate.py")
+    if ms["total"] != h["spark_total"]:
+        bad.append(f"results/mutation_spark.json total={ms['total']} but tests/mutate.py defines {h['spark_total']} "
+                   f"Spark mutants; rerun tests/mutate.py --spark")
+    for d, name in ((mu, "mutation.json"), (ms, "mutation_spark.json")):
+        if d["escaped"] or d["killed"] != d["total"]:
+            bad.append(f"results/{name} records escaped mutants: {d['escaped']}")
+
+    flat = re.sub(r"\s+", " ", readme)  # a phrase may be wrapped across lines
+
+    def expect(pattern, values, what):
+        found = list(re.finditer(pattern, flat))
+        if not found:
+            bad.append(f"README.md no longer states {what} (pattern {pattern!r})")
+        for m in found:
+            got = tuple(int(g.replace(",", "")) for g in m.groups())
+            if got != values:
+                bad.append(f"README.md says {m.group(0)!r}, but {what} is {'/'.join(map(str, values))}")
+
+    expect(r"\b(\d[\d,]*) pytest tests\b", (mu["tests_passed"],), "the pytest count in results/mutation.json")
+    expect(r"\b(\d+)/(\d+) planted bugs (?:are )?killed\b", (mu["killed"], mu["total"]),
+           "the mutant count in results/mutation.json")
+    expect(r"\b(\d+)/(\d+) planted bugs in the Spark code killed\b", (ms["killed"], ms["total"]),
+           "the Spark mutant count in results/mutation_spark.json")
+    expect(r"`tests/test_spark\.py`, (\d+) tests\b", (ms["tests_passed"],),
+           "the Spark test count in results/mutation_spark.json")
+    expect(r"\((\d+) in the batch models, (\d+) in the streaming sink\)", (h["spark_batch"], h["spark_stream"]),
+           "the split of SPARK_MUTANTS in tests/mutate.py")
+    expect(r"\((\d+) in Python, (\d+) in dbt SQL; (\d+) of them", (mu["python"], mu["sql"], mu["reviewer"]),
+           "the split of MUTANTS in results/mutation.json")
+    loads = _load(res, "batch_ingest.json")
+    links = [x["source"]["rows"] for x in (loads or {}).get("loads", []) if x["dataset"] == "speedband_links"]
+    if links:
+        expect(r"speed bands for all ([\d,]+) road links", (links[0],), "the link count in results/batch_ingest.json")
+    # any other "<n> mutants" or "<n> planted bugs" must be one of the two harness totals
+    for m in re.finditer(r"\b(\d+) (?:mutants|planted bugs)\b", flat):
+        if int(m.group(1)) not in (h["total"], h["spark_total"]):
+            bad.append(f"README.md says {m.group(0)!r}; the harness has {h['total']} mutants and "
+                       f"{h['spark_total']} Spark mutants")
+    return bad
+
+
+def problems(readme: str, res: Path, harness: dict | None = None) -> list[str]:
+    """Everything `--check` reports: generated blocks that differ, and hand-written counts that differ."""
+    bad = []
+    for name, builder in BLOCKS.items():
+        start, end = _markers(name)
+        if readme.count(start) != 1 or readme.count(end) != 1:
+            bad.append(f"README.md must contain exactly one {start} ... {end} block")
+            continue
+        current = readme.split(start, 1)[1].split(end, 1)[0].strip()
+        if current != builder(res).strip():
+            bad.append(f"README.md {name} block differs from the results files; run `make summary`")
+    return bad + count_problems(readme, res, harness)
+
+
+def _replace_block(text: str, name: str, body: str) -> str:
+    start, end = _markers(name)
+    if start not in text or end not in text:
+        return text
+    head, rest = text.split(start, 1)
+    return f"{head}{start}\n{body}{end}{rest.split(end, 1)[1]}"
+
+
 def run(settings, update_readme: bool = False, check: bool = False) -> None:
     res = Path(settings.results_dir)
     text = build(res)
     readme = REPO / "README.md"
     r = readme.read_text(encoding="utf-8") if readme.exists() else ""
     if check:
-        if START not in r or END not in r:
-            sys.exit("README.md has no results block")
-        current = r.split(START, 1)[1].split(END, 1)[0].strip()
-        if current != text.strip():
-            sys.exit("README.md results block differs from the results files; run `make summary`")
-        print("README results block matches the results files")
+        bad = problems(r, res)
+        if bad:
+            sys.exit("README.md disagrees with the results files:\n- " + "\n- ".join(bad))
+        print(f"README generated blocks ({', '.join(BLOCKS)}) and hand-written test/mutant counts match the "
+              f"results files")
         return
-    (res / "SUMMARY.md").write_text("# Measured results\n\n" + text, encoding="utf-8")
-    if update_readme and START in r and END in r:
-        head, rest = r.split(START, 1)
-        tail = rest.split(END, 1)[1]
-        readme.write_text(f"{head}{START}\n{text}{END}{tail}", encoding="utf-8")
+    (res / "SUMMARY.md").write_text("# Measured results\n\n" + text, encoding="utf-8", newline="\n")
+    if update_readme:
+        for name, builder in BLOCKS.items():
+            r = _replace_block(r, name, builder(res))
+        readme.write_text(r, encoding="utf-8", newline="\n")
     print(text)

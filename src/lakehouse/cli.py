@@ -189,6 +189,11 @@ def cmd_repro(settings, a):
         sys.exit("gold outputs differ between the two runs")
 
 
+def cmd_inputs(settings, a):
+    from . import inputs
+    sys.exit(inputs.run(settings.source_dir, Path(a.results) if a.results else REPO / "results"))
+
+
 def cmd_summarize(settings, a):
     from . import summarize
     summarize.run(settings, update_readme=a.update_readme, check=a.check)
@@ -288,7 +293,11 @@ def main(argv=None):
     s = sub.add_parser("stream-bench", help="throughput, latency and re-run measurements on the Docker stack")
     s.add_argument("--until"), s.add_argument("--keep-bronze", action="store_true")
     s = sub.add_parser("repro", help="run the batch pipeline twice from scratch and compare gold hashes")
-    s.add_argument("--until"), s.add_argument("--workdir", default="/root/lakehouse-data/repro")
+    s.add_argument("--until")
+    s.add_argument("--workdir", default=str(REPO / ".lake" / "repro"), help="default: .lake/repro (git-ignored)")
+    s = sub.add_parser("inputs", help="compare the files under SOURCE_DIR with the inputs the results were measured on")
+    s.add_argument("--results", help="results folder with batch_ingest.json and speedband_files.json "
+                                     "(default: the repository's results/)")
     s = sub.add_parser("summarize", help="write results/SUMMARY.md from the results files")
     s.add_argument("--update-readme", action="store_true")
     s.add_argument("--check", action="store_true", help="fail if README.md disagrees with the results files")
@@ -312,7 +321,7 @@ def main(argv=None):
     {"ingest-batch": cmd_ingest_batch, "ingest-speedbands": cmd_ingest_speedbands, "profile": cmd_profile,
      "dbt": cmd_dbt, "quality": cmd_quality, "publish": cmd_publish, "report": cmd_report, "publication": cmd_publication,
      "pipeline": cmd_pipeline, "produce": cmd_produce, "consume": cmd_consume, "repro": cmd_repro,
-     "summarize": cmd_summarize, "live": cmd_live, "stream-bench": cmd_stream_bench,
+     "summarize": cmd_summarize, "inputs": cmd_inputs, "live": cmd_live, "stream-bench": cmd_stream_bench,
      "spark-batch": cmd_spark_batch, "spark-stream": cmd_spark_stream,
      "spark-stream-bench": cmd_spark_stream_bench}[a.cmd](settings, a)
 

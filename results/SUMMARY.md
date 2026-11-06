@@ -109,5 +109,5 @@ The two runs built bronze speed bands from the snapshot files. In the main pipel
 
 ### Tests
 
-- 102 pytest tests pass on the unmodified code: unit tests (including the consumer against an in-memory broker, killed right after its n-th bronze write for several n), the end-to-end fixture run (whose dbt build runs 90 dbt tests) and the fixture reproducibility check.
-- Mutation check: 65/65 planted bugs killed (51 in Python, 14 in dbt SQL; 10 of them are the mutants an external review added).
+- 167 pytest tests pass on the unmodified code: unit tests (including the consumer against an in-memory broker, killed right after its n-th bronze write for several n), the end-to-end fixture run (whose dbt build runs 90 dbt tests) and the fixture reproducibility check.
+- Mutation check: 79/79 planted bugs killed (64 in Python, 15 in dbt SQL; 24 of them are the mutants an external review added).

@@ -17,6 +17,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: No local machine paths in tracked files
+        run: |
+          if git grep -nIE '(/root/|/home/[A-Za-z]|[A-Za-z]:[\/]Users[\/]|/Users/[A-Za-z]|/mnt/[a-z]/)' -- . ':!.github/workflows/ci.yml'; then
+            echo "local paths found (above); use repository-relative paths"; exit 1
+          fi
       - run: pip install -r requirements.txt
       - name: Fixture is reproducible from its generator
         run: python tests/make_fixture.py && git diff --exit-code tests/fixtures
@@ -28,6 +33,8 @@ jobs:
         run: PYTHONPATH=src python -m lakehouse summarize --check
       - name: Mutation check (every planted bug must fail a test)
         run: python tests/mutate.py
+      - name: Committed results/mutation.json equals this run (the README's test and mutant counts come from it)
+        run: git diff --exit-code results/mutation.json
 
   spark:
     runs-on: ubuntu-24.04
@@ -47,6 +54,25 @@ jobs:
         run: python -m pytest -q tests/test_spark.py
       - name: Spark mutation check (every planted bug in the Spark code must fail a test)
         run: python tests/mutate.py --spark
+      - name: Committed results/mutation_spark.json equals this run
+        run: git diff --exit-code results/mutation_spark.json
+
+  airflow-dag:
+    # The DAG parsed by the real Airflow of docker/airflow/Dockerfile; tests/test_cutoff.py only uses stubs.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install Airflow 3.3.2 with its published constraints
+        run: |
+          pip install "apache-airflow==3.3.2" "apache-airflow-providers-standard"             --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+      - name: DagBag has no import errors and the task graph is the pipeline's (with a self-test on a broken copy)
+        env:
+          AIRFLOW_HOME: ${{ runner.temp }}/airflow
+        run: python tools/check_dag.py --self-test
 
   stack-smoke:
     runs-on: ubuntu-24.04

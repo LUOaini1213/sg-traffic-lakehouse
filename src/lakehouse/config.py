@@ -33,13 +33,20 @@ class Settings:
         return self.lake_root.startswith("s3://")
 
 
+def _path(value) -> Path:
+    """A relative path in the environment (e.g. in .env) is relative to the repository root, not to the current
+    directory: dbt runs in dbt/, and the same .env serves every command."""
+    p = Path(value).expanduser()
+    return p if p.is_absolute() else REPO / p
+
+
 def load(**overrides) -> Settings:
     env = os.environ
     s = dict(
-        source_dir=Path(env.get("SOURCE_DIR", REPO / "tests" / "fixtures" / "raw" / "datamall")),
+        source_dir=_path(env.get("SOURCE_DIR", REPO / "tests" / "fixtures" / "raw" / "datamall")),
         lake_root=env.get("LAKE_ROOT", str(REPO / ".lake")).rstrip("/"),
-        warehouse=Path(env.get("DUCKDB_PATH", REPO / ".lake" / "warehouse.duckdb")),
-        results_dir=Path(env.get("RESULTS_DIR", REPO / "results")),
+        warehouse=_path(env.get("DUCKDB_PATH", REPO / ".lake" / "warehouse.duckdb")),
+        results_dir=_path(env.get("RESULTS_DIR", REPO / "results")),
         s3_endpoint=env.get("S3_ENDPOINT", ""),
         s3_key=env.get("AWS_ACCESS_KEY_ID", ""),
         s3_secret=env.get("AWS_SECRET_ACCESS_KEY", ""),
